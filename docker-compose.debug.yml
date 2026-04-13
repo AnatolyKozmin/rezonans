@@ -1,0 +1,7 @@
+# Локальная отладка: API доступен с хоста на :4000
+# Запуск: docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d
+
+services:
+  api:
+    ports:
+      - "${API_PORT:-4000}:4000"

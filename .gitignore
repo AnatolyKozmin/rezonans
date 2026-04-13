@@ -1,0 +1,24 @@
+# Dependencies & build
+node_modules/
+dist/
+
+# Secrets & env (корень и apps/*)
+.env
+.env.*
+!.env.example
+
+# SQLite (локально и file:./data/…)
+*.db
+*.db-journal
+apps/api/dev.db
+apps/api/data/
+
+# Загрузки API (структура — через .gitkeep)
+apps/api/uploads/*
+!apps/api/uploads/.gitkeep
+
+# Локальные overrides Docker Compose
+docker-compose.override.yml
+
+# OS / IDE
+.DS_Store

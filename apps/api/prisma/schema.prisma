@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String   @id @default(cuid())
+  telegramId       String   @unique
+  username         String?
+  firstName        String?
+  lastName         String?
+  createdAt        DateTime @default(now())
+  lastActivityAt   DateTime @default(now())
+  reminderMuted    Boolean  @default(false)
+
+  adventProgress   AdventProgress[]
+  trainingSignups  TrainingSignup[]
+  giveawayEntries  GiveawayEntry[]
+}
+
+/// День 1..21 — контент кампании
+model AdventDay {
+  day            Int      @id
+  title          String
+  materialType   String   // ARTICLE | BADGE | VIDEO
+  shortSummary   String
+  articleUrl     String?
+  videoUrl       String?
+  extraText      String?
+  taskPrompt     String
+  taskKind       String   // QUIZ | CONFIRM
+  quizOptions    String?  // JSON string array
+  correctIndex   Int?
+
+  progress AdventProgress[]
+  media    AdventDayMedia[]
+}
+
+/// Материалы дня: фото, фото+текст, видео (файлы в /uploads)
+model AdventDayMedia {
+  id        String   @id @default(cuid())
+  day       Int
+  kind      String   // IMAGE | IMAGE_TEXT | VIDEO
+  /// Относительный путь от корня uploads, напр. advent/5/1730-abc.jpg
+  filename  String
+  caption   String?
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  adventDay AdventDay @relation(fields: [day], references: [day], onDelete: Cascade)
+
+  @@index([day])
+}
+
+model AdventProgress {
+  id              String   @id @default(cuid())
+  userId          String
+  day             Int
+  viewedAt        DateTime @default(now())
+  taskCompletedAt DateTime?
+  quizAnswerIndex Int?
+  confirmDone     Boolean  @default(false)
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  adventDay AdventDay @relation(fields: [day], references: [day], onDelete: Cascade)
+
+  @@unique([userId, day])
+  @@index([userId])
+}
+
+model Training {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  startsAt    DateTime
+  location    String
+  sortOrder   Int      @default(0)
+
+  signups TrainingSignup[]
+}
+
+model TrainingSignup {
+  id          String   @id @default(cuid())
+  userId      String
+  trainingId  String
+  createdAt   DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  training Training @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, trainingId])
+  @@index([trainingId])
+}
+
+/// Розыгрыш 1..5: привязка к «неделе» кампании (1→дни 1-7, 2→8-14, 3→15-21)
+model Giveaway {
+  id             Int      @id
+  title          String
+  campaignWeek   Int      // 1 | 2 | 3
+  minDaysInWeek  Int      // 3 | 4 | 5
+  scheduledAt    DateTime?
+  winnersPicked  Boolean  @default(false)
+
+  entries GiveawayEntry[]
+}
+
+model GiveawayEntry {
+  id         String   @id @default(cuid())
+  userId     String
+  giveawayId Int
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  giveaway Giveaway @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, giveawayId])
+  @@index([userId])
+}
+
+model SiteContent {
+  key   String @id
+  value String // JSON or markdown
+}
