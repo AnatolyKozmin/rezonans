@@ -1,5 +1,6 @@
 # Rezonans: веб (nginx) + API. Демо для заказчика: бот не нужен — не включайте profile bot.
-# Снаружи по умолчанию только порт веба (WEB_PORT, обычно 80); API слушает только внутри сети compose.
+# Снаружи по умолчанию порт веба WEB_PORT (8080 — чтобы не конфликтовать с nginx на :80 на том же хосте).
+# Нужен именно 80: в .env задайте WEB_PORT=80.
 #
 # Запуск демо: docker compose up -d --build
 # API с хоста на :4000 (отладка): docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d
@@ -44,7 +45,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "${WEB_PORT:-80}:80"
+      - "${WEB_PORT:-8080}:80"
 
   bot:
     profiles:
@@ -60,7 +61,7 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       API_BASE_URL: http://api:4000
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
-      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:8080}
 
 volumes:
   api_data:
