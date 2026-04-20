@@ -11,7 +11,9 @@ dist/
 *.db
 *.db-journal
 apps/api/dev.db
-apps/api/data/
+# Данные в ./apps/api/data (Docker bind-mount и локальный file:./data/db.sqlite) — не в git
+apps/api/data/*
+!apps/api/data/.gitkeep
 
 # Загрузки API (структура — через .gitkeep)
 apps/api/uploads/*

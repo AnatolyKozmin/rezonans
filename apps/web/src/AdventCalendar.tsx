@@ -26,19 +26,6 @@ type AdventPayload = {
   days: AdventDayPublic[];
 };
 
-const TYPE_LABEL: Record<string, string> = {
-  ARTICLE: "Статья",
-  BADGE: "Плашка",
-  VIDEO: "Видео",
-};
-
-/** Цвет плашки снизу карточки — три «недели» кампании */
-function captionBarBg(day: number): string {
-  if (day <= 7) return "#5c3d9e";
-  if (day <= 14) return "#2563eb";
-  return "#0d9488";
-}
-
 export function AdventCalendar() {
   const [payload, setPayload] = useState<AdventPayload | null>(null);
   const [selected, setSelected] = useState(1);
@@ -80,10 +67,10 @@ export function AdventCalendar() {
     return () => window.clearTimeout(t);
   }, [payload, selected, scrollDayIntoView]);
 
-  const active = useMemo(
-    () => payload?.days.find((d) => d.day === selected),
-    [payload, selected]
-  );
+  const active = useMemo(() => {
+    if (!payload?.days.length) return undefined;
+    return payload.days.find((d) => d.day === selected) ?? payload.days[0];
+  }, [payload, selected]);
 
   const goPrev = () => {
     if (!payload?.days.length) return;
@@ -109,14 +96,18 @@ export function AdventCalendar() {
 
       {loadError ? <p className="alert">{loadError}</p> : null}
 
-      {payload && active ? (
+      {payload && payload.days.length === 0 ? (
+        <p className="muted">
+          Дни адвента ещё не заведены в базе. Выполните seed или добавьте дни в админке (/admin).
+        </p>
+      ) : null}
+
+      {payload && payload.days.length > 0 && active ? (
         <div className="advent-shell">
           <div className="advent-stage" aria-live="polite">
             <div key={selected} className="advent-stage-inner">
               <div className="advent-stage-head">
-                <span className="advent-badge">
-                  {TYPE_LABEL[active.materialType] ?? active.materialType} · день {active.day}
-                </span>
+                <span className="advent-badge">День {active.day}</span>
                 {!active.unlocked ? <span className="advent-lock-pill">скоро</span> : null}
               </div>
               <h3 className="advent-stage-title">{active.title}</h3>
@@ -154,8 +145,7 @@ export function AdventCalendar() {
                     ) : null}
                   </div>
                   <p className="advent-task-hint">
-                    <strong>Задание:</strong> {active.taskPrompt}{" "}
-                    <span className="advent-task-note">— выполняется в боте после просмотра.</span>
+                    <strong>Подсказка:</strong> {active.taskPrompt}
                   </p>
                 </>
               ) : (
@@ -180,13 +170,13 @@ export function AdventCalendar() {
               <div ref={scrollerRef} className="advent-carousel__scroller" role="tablist" aria-label="Дни 1–21">
                 {payload.days.map((d) => {
                   const isToday = payload.currentAdventDay === d.day;
-                  const typeShort = TYPE_LABEL[d.materialType] ?? d.materialType;
                   return (
                     <button
                       key={d.day}
                       type="button"
                       role="tab"
                       data-advent-day={d.day}
+                      aria-label={`День ${d.day}`}
                       aria-selected={selected === d.day}
                       className={[
                         "advent-tile",
@@ -199,14 +189,9 @@ export function AdventCalendar() {
                       onClick={() => setSelected(d.day)}
                     >
                       <div className="advent-tile__preview">
-                        <span className="advent-tile__type">{typeShort}</span>
                         <span className="advent-tile__num" aria-hidden>
                           {d.day}
                         </span>
-                      </div>
-                      <div className="advent-tile__caption" style={{ background: captionBarBg(d.day) }}>
-                        <span className="advent-tile__caption-title">День {d.day}</span>
-                        <span className="advent-tile__caption-sub">({typeShort})</span>
                       </div>
                     </button>
                   );
@@ -215,7 +200,7 @@ export function AdventCalendar() {
             </div>
           </div>
         </div>
-      ) : !loadError ? (
+      ) : payload === null && !loadError ? (
         <p className="muted">Загрузка календаря…</p>
       ) : null}
     </section>

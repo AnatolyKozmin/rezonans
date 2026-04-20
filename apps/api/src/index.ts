@@ -6,6 +6,7 @@ import { publicRouter } from "./routes/public.js";
 import { usersRouter } from "./routes/users.js";
 import { adminRouter } from "./routes/admin.js";
 import { adminAdventRouter } from "./routes/adminAdvent.js";
+import { adminSiteRouter } from "./routes/adminSite.js";
 import { internalRouter } from "./routes/internal.js";
 
 const app = express();
@@ -20,6 +21,7 @@ app.use("/api", publicRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/admin/advent", adminAdventRouter);
+app.use("/api/admin/site", adminSiteRouter);
 app.use("/api/internal", internalRouter);
 
 app.listen(config.port, () => {

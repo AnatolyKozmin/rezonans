@@ -10,18 +10,47 @@ import { adventUpload, relativeAdventFile } from "../uploadMulter.js";
 export const adminAdventRouter = Router();
 adminAdventRouter.use(adminAuth);
 
-const PutDay = z.object({
-  title: z.string().optional(),
-  materialType: z.string().optional(),
-  shortSummary: z.string().optional(),
+/** Тело из админки: только контент для сайта. Задание/квиз в БД выставляются фиксированно (без настройки в UI). */
+const PutDaySite = z.object({
+  title: z.string(),
+  materialType: z.string(),
+  shortSummary: z.string(),
   articleUrl: z.string().nullable().optional(),
   videoUrl: z.string().nullable().optional(),
   extraText: z.string().nullable().optional(),
-  taskPrompt: z.string().optional(),
-  taskKind: z.enum(["QUIZ", "CONFIRM"]).optional(),
-  quizOptions: z.array(z.string()).nullable().optional(),
-  correctIndex: z.number().nullable().optional(),
 });
+
+/** Нейтральное задание для совместимости API/прогресса; на сайте показывается как подсказка. */
+const ADVENT_TASK_BACKEND = {
+  taskPrompt: "Ознакомьтесь с материалами дня на сайте.",
+  taskKind: "CONFIRM",
+  quizOptions: null as string | null,
+  correctIndex: null as number | null,
+};
+
+function defaultAdventDay(day: number) {
+  return {
+    title: `День ${day}`,
+    materialType: "ARTICLE",
+    shortSummary: "",
+    articleUrl: null as string | null,
+    videoUrl: null as string | null,
+    extraText: null as string | null,
+    ...ADVENT_TASK_BACKEND,
+  };
+}
+
+function adventDayPayloadFromSite(d: z.infer<typeof PutDaySite>) {
+  return {
+    title: d.title,
+    materialType: d.materialType,
+    shortSummary: d.shortSummary,
+    articleUrl: d.articleUrl ?? null,
+    videoUrl: d.videoUrl ?? null,
+    extraText: d.extraText ?? null,
+    ...ADVENT_TASK_BACKEND,
+  };
+}
 
 const Kind = z.enum(["IMAGE", "IMAGE_TEXT", "VIDEO"]);
 
@@ -56,28 +85,16 @@ adminAdventRouter.put("/days/:day", async (req, res) => {
     res.status(400).json({ error: "invalid day" });
     return;
   }
-  const body = PutDay.safeParse(req.body);
+  const body = PutDaySite.safeParse(req.body);
   if (!body.success) {
     res.status(400).json({ error: body.error.flatten() });
     return;
   }
-  const d = body.data;
-  const row = await prisma.adventDay.update({
+  const data = adventDayPayloadFromSite(body.data);
+  const row = await prisma.adventDay.upsert({
     where: { day },
-    data: {
-      ...(d.title !== undefined && { title: d.title }),
-      ...(d.materialType !== undefined && { materialType: d.materialType }),
-      ...(d.shortSummary !== undefined && { shortSummary: d.shortSummary }),
-      ...(d.articleUrl !== undefined && { articleUrl: d.articleUrl }),
-      ...(d.videoUrl !== undefined && { videoUrl: d.videoUrl }),
-      ...(d.extraText !== undefined && { extraText: d.extraText }),
-      ...(d.taskPrompt !== undefined && { taskPrompt: d.taskPrompt }),
-      ...(d.taskKind !== undefined && { taskKind: d.taskKind }),
-      ...(d.quizOptions !== undefined && {
-        quizOptions: d.quizOptions === null ? null : JSON.stringify(d.quizOptions),
-      }),
-      ...(d.correctIndex !== undefined && { correctIndex: d.correctIndex }),
-    },
+    create: { day, ...data },
+    update: data,
     include: { media: { orderBy: { position: "asc" } } },
   });
   res.json(row);
@@ -134,6 +151,12 @@ adminAdventRouter.post(
       return;
     }
 
+    await prisma.adventDay.upsert({
+      where: { day },
+      create: { day, ...defaultAdventDay(day) },
+      update: {},
+    });
+
     const rel = relativeAdventFile(day, file.filename);
     const maxPos = await prisma.adventDayMedia.aggregate({
       where: { day },
@@ -153,6 +176,35 @@ adminAdventRouter.post(
     res.json(media);
   }
 );
+
+const PatchMediaCaption = z.object({
+  caption: z.string().nullable(),
+});
+
+adminAdventRouter.patch("/media/:id", async (req, res) => {
+  const id = req.params.id;
+  const body = PatchMediaCaption.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.flatten() });
+    return;
+  }
+  const row = await prisma.adventDayMedia.findUnique({ where: { id } });
+  if (!row) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  const cap =
+    body.data.caption === null ? null : String(body.data.caption).trim() || null;
+  if (row.kind === "IMAGE_TEXT" && !cap) {
+    res.status(400).json({ error: "для «фото с текстом» подпись обязательна" });
+    return;
+  }
+  const updated = await prisma.adventDayMedia.update({
+    where: { id },
+    data: { caption: cap },
+  });
+  res.json(updated);
+});
 
 adminAdventRouter.delete("/media/:id", async (req, res) => {
   const id = req.params.id;

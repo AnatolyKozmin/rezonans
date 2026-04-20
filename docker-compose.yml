@@ -7,6 +7,10 @@
 # С ботом: docker compose --profile bot up -d --build
 #
 # На сервере задайте CORS_ORIGIN и PUBLIC_WEB_URL под ваш URL (например https://demo.example.com).
+#
+# База и файлы адвента: bind-mount в ./apps/api/data и ./apps/api/uploads (на хосте, рядом с кодом).
+# Пересборка образа их не трогает; бэкап — копия этих папок. Именованные тома не используются.
+# Раньше были тома api_data / api_uploads: при переходе один раз перенесите их содержимое в эти каталоги, если нужны старые данные.
 
 services:
   api:
@@ -15,7 +19,8 @@ services:
       dockerfile: docker/api/Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: file:./data/db.sqlite
+      # Абсолютный путь = всегда тот же файл, что в bind-mount ./apps/api/data (не зависит от cwd Node).
+      DATABASE_URL: file:/app/apps/api/data/db.sqlite
       API_PORT: "4000"
       API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:4000}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
@@ -25,8 +30,8 @@ services:
       TZ: ${TZ:-Europe/Moscow}
       ADVENT_REMINDER_HOURS: ${ADVENT_REMINDER_HOURS:-24}
     volumes:
-      - api_data:/app/apps/api/data
-      - api_uploads:/app/apps/api/uploads
+      - ./apps/api/data:/app/apps/api/data
+      - ./apps/api/uploads:/app/apps/api/uploads
     expose:
       - "4000"
     healthcheck:
@@ -62,7 +67,3 @@ services:
       API_BASE_URL: http://api:4000
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:8080}
-
-volumes:
-  api_data:
-  api_uploads:

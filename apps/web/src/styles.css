@@ -152,6 +152,37 @@ a:hover {
   outline-offset: 2px;
 }
 
+/* Акцент «Адвент» в меню — заметный лайм + мягкое «дыхание» свечения */
+.site-nav__link--advent {
+  position: relative;
+  color: var(--bg-deep) !important;
+  background: linear-gradient(145deg, #f0ff99 0%, var(--accent-lime) 42%, #9fdc00 100%) !important;
+  border-color: rgba(255, 255, 255, 0.55) !important;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  box-shadow: 0 0 16px rgba(184, 255, 0, 0.45);
+  animation: site-nav-advent-pulse 2.5s ease-in-out infinite;
+}
+
+.site-nav__link--advent:hover {
+  color: var(--bg-deep) !important;
+  filter: brightness(1.06);
+  border-color: rgba(255, 255, 255, 0.75) !important;
+  background: linear-gradient(145deg, #fbffc9 0%, #d4ff66 45%, var(--accent-lime) 100%) !important;
+}
+
+@keyframes site-nav-advent-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 12px rgba(184, 255, 0, 0.4), 0 0 0 0 rgba(184, 255, 0, 0.12);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 26px rgba(184, 255, 0, 0.7), 0 0 0 5px rgba(184, 255, 0, 0.1);
+    transform: scale(1.05);
+  }
+}
+
 @media (min-width: 900px) {
   .site-nav__track {
     flex-wrap: wrap;
@@ -479,6 +510,10 @@ a:hover {
   white-space: pre-wrap;
   margin: 0;
   font-family: var(--font-body);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+  word-break: break-word;
 }
 
 /* ——— Адвент: верх — контент, низ — дни ——— */
@@ -802,7 +837,7 @@ a:hover {
 .advent-tile {
   flex: 0 0 112px;
   width: 112px;
-  height: 168px;
+  height: 112px;
   padding: 0;
   border: none;
   border-radius: 12px;
@@ -830,52 +865,16 @@ a:hover {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.25rem;
   padding: 0.4rem;
   position: relative;
 }
 
-.advent-tile__type {
-  font-size: 0.58rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.55);
-  text-align: center;
-  line-height: 1.2;
-}
-
 .advent-tile__num {
   font-family: var(--font-display);
-  font-size: 2.35rem;
+  font-size: 2.55rem;
   line-height: 1;
-  color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.18);
   user-select: none;
-}
-
-.advent-tile__caption {
-  flex-shrink: 0;
-  min-height: 44px;
-  padding: 0.35rem 0.35rem 0.45rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.1rem;
-}
-
-.advent-tile__caption-title {
-  font-size: 0.72rem;
-  font-weight: 800;
-  color: #fff;
-  line-height: 1.2;
-}
-
-.advent-tile__caption-sub {
-  font-size: 0.62rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.82);
-  line-height: 1.2;
 }
 
 .advent-tile:hover:not(.is-locked) {
@@ -1045,10 +1044,15 @@ a:hover {
 
   .advent-carousel {
     margin-top: 0.15rem;
+    /* Чуть шире лента дней относительно shell — удобнее свайпать */
+    margin-left: -0.35rem;
+    margin-right: -0.35rem;
+    width: calc(100% + 0.7rem);
   }
 
   .advent-carousel__viewport {
-    margin: 0 42px;
+    margin: 0 40px;
+    overflow: hidden;
   }
 
   .advent-carousel__nav {
@@ -1070,12 +1074,13 @@ a:hover {
   .advent-carousel__scroller {
     padding: 10px calc(50% - 48px) 16px;
     gap: 6px;
+    overscroll-behavior-x: contain;
   }
 
   .advent-tile {
     flex-basis: 96px;
     width: 96px;
-    height: 150px;
+    height: 96px;
   }
 
   .advent-tile.is-active {
@@ -1086,20 +1091,54 @@ a:hover {
     font-size: 2rem;
   }
 
-  .advent-tile__caption {
-    min-height: 42px;
-    padding: 0.3rem 0.25rem 0.4rem;
+  /* iOS: не увеличивать зум при фокусе в полях админки */
+  .admin-input,
+  .admin-textarea {
+    font-size: 16px;
+  }
+}
+
+/* Очень узкие экраны (старые iPhone SE, маленькие Android) */
+@media (max-width: 400px) {
+  .shell {
+    padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
   }
 
-  .advent-tile__caption-title {
-    font-size: 0.65rem;
+  .site-nav__link {
+    padding: 0.5rem 0.65rem;
+    font-size: 0.62rem;
   }
 
-  .advent-tile__caption-sub {
-    font-size: 0.55rem;
-    line-height: 1.15;
-    text-align: center;
-    padding: 0 0.1rem;
+  .advent-carousel__viewport {
+    margin: 0 34px;
+  }
+
+  .advent-carousel__nav {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    font-size: 1.1rem;
+  }
+
+  .advent-carousel__scroller {
+    padding: 8px calc(50% - 44px) 14px;
+    gap: 5px;
+  }
+
+  .advent-tile {
+    flex-basis: 88px;
+    width: 88px;
+    height: 88px;
+  }
+
+  .advent-tile__num {
+    font-size: 1.75rem;
+  }
+
+  .footer {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -1115,6 +1154,11 @@ a:hover {
 
   html {
     scroll-behavior: auto;
+  }
+
+  .site-nav__link--advent {
+    animation: none;
+    transform: none;
   }
 }
 
@@ -1132,8 +1176,11 @@ a:hover {
 }
 
 .footer-admin-link {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   margin-left: 0.35rem;
+  padding: 0.2rem 0;
   font-weight: 800;
   color: var(--text-soft) !important;
   text-decoration: underline !important;
@@ -1197,6 +1244,46 @@ a:hover {
   align-items: center;
 }
 
+.admin-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.admin-subnav a {
+  color: var(--text-soft);
+  text-decoration: none !important;
+  font-weight: 800;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.admin-subnav a:hover {
+  color: var(--text-main);
+}
+
+.admin-subnav a.is-active {
+  color: var(--accent-lime);
+  border-color: rgba(184, 255, 0, 0.45);
+  background: rgba(184, 255, 0, 0.08);
+}
+
+.admin-faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.admin-faq-row {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+}
+
 .admin-link {
   color: var(--accent-lime) !important;
   font-weight: 800;
@@ -1225,57 +1312,82 @@ a:hover {
   margin-bottom: 1rem;
 }
 
-.admin-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
-  gap: 1.5rem;
-  align-items: start;
+.admin-advent-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
 }
 
-@media (max-width: 900px) {
-  .admin-layout {
-    grid-template-columns: 1fr;
-  }
+.admin-day-panel {
+  padding: 1rem 1.25rem 1.2rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--stroke);
+  background: rgba(15, 18, 28, 0.55);
+  backdrop-filter: blur(12px);
 }
 
-.admin-sidebar {
-  position: sticky;
-  top: max(0.5rem, env(safe-area-inset-top, 0px));
+.admin-day-panel__title {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 0.35rem;
+  color: var(--accent-lime);
+}
+
+.admin-day-panel__hint {
+  margin: 0 0 0.9rem;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+  line-height: 1.45;
 }
 
 .admin-day-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 0.35rem;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.45rem;
+  width: 100%;
+  max-width: 100%;
+}
+
+@media (max-width: 520px) {
+  .admin-day-grid {
+    gap: 0.35rem;
+  }
 }
 
 .admin-day-btn {
+  width: 100%;
   aspect-ratio: 1;
-  min-height: 36px;
-  border-radius: 10px;
+  min-height: 38px;
+  border-radius: 12px;
   border: 1px solid var(--stroke);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text);
   font-family: var(--font-display);
-  font-size: 0.8rem;
+  font-size: clamp(0.75rem, 2.5vw, 0.88rem);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
 .admin-day-btn:hover {
-  border-color: rgba(184, 255, 0, 0.4);
+  border-color: rgba(184, 255, 0, 0.45);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .admin-day-btn.is-active {
   border-color: var(--accent-lime);
-  background: rgba(184, 255, 0, 0.15);
+  background: rgba(184, 255, 0, 0.18);
   color: var(--accent-lime);
+  box-shadow: 0 0 0 1px rgba(184, 255, 0, 0.25);
 }
 
 .admin-main {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  min-width: 0;
 }
 
 .admin-section {

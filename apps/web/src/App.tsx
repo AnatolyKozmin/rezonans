@@ -75,7 +75,11 @@ export function App() {
       <nav className="site-nav" aria-label="Навигация по странице">
         <div className="site-nav__track">
           {NAV.map((item) => (
-            <a key={item.href} className="site-nav__link" href={item.href}>
+            <a
+              key={item.href}
+              className={item.href === "#advent" ? "site-nav__link site-nav__link--advent" : "site-nav__link"}
+              href={item.href}
+            >
               {item.label}
             </a>
           ))}
@@ -180,6 +184,10 @@ export function App() {
         бота и даты кампании в <span className="mono">.env</span>.{" "}
         <Link to="/admin" className="footer-admin-link">
           Админка адвента
+        </Link>
+        {" · "}
+        <Link to="/admin/site" className="footer-admin-link">
+          FAQ и маршрут
         </Link>
       </footer>
     </div>
