@@ -9,6 +9,11 @@ function envString(raw: string | undefined, fallback: string): string {
   return v;
 }
 
+function envBool(raw: string | undefined): boolean {
+  const v = (raw ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
 export const config = {
   port: Number(process.env.API_PORT ?? 4000),
   databaseUrl: process.env.DATABASE_URL ?? "file:./dev.db",
@@ -17,6 +22,8 @@ export const config = {
   campaignStartDate: process.env.CAMPAIGN_START_DATE ?? "2026-04-14",
   tz: process.env.TZ ?? "Europe/Moscow",
   adventReminderHours: Number(process.env.ADVENT_REMINDER_HOURS ?? 24),
+  /** Все дни адвента считаются открытыми (ручное тестирование сайта без смены даты кампании). */
+  testingUnlockAllAdvent: envBool(process.env.TESTING_UNLOCK_ALL_ADVENT),
   adminApiKey: envString(process.env.ADMIN_API_KEY, "dev-admin-key"),
   adminTelegramIds: (process.env.ADMIN_TELEGRAM_IDS ?? "")
     .split(",")

@@ -23,6 +23,7 @@ type DayRow = {
   taskKind: string;
   quizOptions: string | null;
   correctIndex: number | null;
+  testImageFilename: string | null;
   media: MediaRow[];
 };
 
@@ -36,6 +37,7 @@ export function AdminPage() {
   const [uploadKind, setUploadKind] = useState<"IMAGE" | "IMAGE_TEXT" | "VIDEO">("IMAGE");
   const [uploadCaption, setUploadCaption] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingTestImage, setPendingTestImage] = useState<File | null>(null);
   const [mediaCaptionDrafts, setMediaCaptionDrafts] = useState<Record<string, string>>({});
   const [savingCaptionId, setSavingCaptionId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -45,6 +47,10 @@ export function AdminPage() {
     extraText: "",
     articleUrl: "",
     videoUrl: "",
+    taskPrompt: "",
+    taskKind: "CONFIRM" as "QUIZ" | "CONFIRM",
+    quizOptionsText: "[\n  \"Вариант 1\",\n  \"Вариант 2\"\n]",
+    correctIndex: 0,
   });
 
   const authHeaders = useCallback(
@@ -87,6 +93,7 @@ export function AdminPage() {
 
   useEffect(() => {
     setPendingFile(null);
+    setPendingTestImage(null);
     setUploadCaption("");
     setMediaCaptionDrafts({});
   }, [selected]);
@@ -96,6 +103,13 @@ export function AdminPage() {
 
   useEffect(() => {
     if (current) {
+      let q: unknown = [];
+      try {
+        q = current.quizOptions ? JSON.parse(current.quizOptions) : [];
+      } catch {
+        q = [];
+      }
+      const arr = Array.isArray(q) ? q.map(String) : [];
       setForm({
         title: current.title,
         shortSummary: current.shortSummary,
@@ -103,6 +117,10 @@ export function AdminPage() {
         extraText: current.extraText ?? "",
         articleUrl: current.articleUrl ?? "",
         videoUrl: current.videoUrl ?? "",
+        taskPrompt: current.taskPrompt ?? "",
+        taskKind: current.taskKind === "QUIZ" ? "QUIZ" : "CONFIRM",
+        quizOptionsText: JSON.stringify(arr.length ? arr : ["Вариант 1", "Вариант 2"], null, 2),
+        correctIndex: current.correctIndex ?? 0,
       });
       return;
     }
@@ -114,12 +132,29 @@ export function AdminPage() {
       extraText: "",
       articleUrl: "",
       videoUrl: "",
+      taskPrompt: "",
+      taskKind: "CONFIRM",
+      quizOptionsText: "[\n  \"Вариант 1\",\n  \"Вариант 2\"\n]",
+      correctIndex: 0,
     });
   }, [current, selected, days]);
 
   const saveDay = async () => {
     if (!savedKey) return;
     setErr(null);
+    let quizOptions: string[] | null = null;
+    let correctIndex: number | null = null;
+    if (form.taskKind === "QUIZ") {
+      try {
+        const parsed = JSON.parse(form.quizOptionsText || "[]");
+        if (!Array.isArray(parsed)) throw new Error("not array");
+        quizOptions = parsed.map((x) => String(x));
+      } catch {
+        setErr('В поле вариантов квиза нужен JSON-массив строк, например ["Да","Нет","Не знаю"].');
+        return;
+      }
+      correctIndex = form.correctIndex;
+    }
     try {
       const r = await fetch(`/api/admin/advent/days/${dayForApi}`, {
         method: "PUT",
@@ -131,12 +166,50 @@ export function AdminPage() {
           extraText: form.extraText || null,
           articleUrl: form.articleUrl || null,
           videoUrl: form.videoUrl || null,
+          taskPrompt: form.taskPrompt,
+          taskKind: form.taskKind,
+          quizOptions: form.taskKind === "QUIZ" ? quizOptions : null,
+          correctIndex: form.taskKind === "QUIZ" ? correctIndex : null,
         }),
       });
       if (!r.ok) throw new Error(await r.text());
       await loadDays();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Ошибка сохранения");
+    }
+  };
+
+  const uploadTestImage = async (file: File) => {
+    if (!savedKey) return;
+    setErr(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await fetch(`/api/admin/advent/days/${dayForApi}/test-image`, {
+        method: "POST",
+        headers: { "x-admin-key": savedKey },
+        body: fd,
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setPendingTestImage(null);
+      await loadDays();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Ошибка загрузки");
+    }
+  };
+
+  const deleteTestImage = async () => {
+    if (!savedKey || !confirm("Убрать фото у теста?")) return;
+    setErr(null);
+    try {
+      const r = await fetch(`/api/admin/advent/days/${dayForApi}/test-image`, {
+        method: "DELETE",
+        headers: { "x-admin-key": savedKey },
+      });
+      if (!r.ok) throw new Error(await r.text());
+      await loadDays();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Ошибка");
     }
   };
 
@@ -319,7 +392,7 @@ export function AdminPage() {
               <section className="admin-section">
                 <h2>Тексты и ссылки (сайт)</h2>
                 <p className="admin-muted" style={{ marginTop: "-0.5rem" }}>
-                  Тип дня влияет на подписи в карточке адвента на сайте. Квиз и сценарии бота здесь не настраиваются.
+                  Тип дня влияет на подписи в карточке адвента на сайте. Ниже — отдельно тест дня для сайта и бота.
                 </p>
                 <label className="admin-label">
                   Заголовок
@@ -382,11 +455,119 @@ export function AdminPage() {
                 </button>
               </section>
 
+              <section className="admin-section">
+                <h2>Тест дня</h2>
+                <p className="admin-muted" style={{ marginTop: "-0.5rem" }}>
+                  Текст и фото необязательны: блок на сайте показывается, если есть вопрос, картинка к тесту или варианты квиза. Ответ и зачёт — в боте.
+                </p>
+                <label className="admin-label">
+                  Текст теста / вопрос (необязательно)
+                  <textarea
+                    className="admin-textarea"
+                    rows={3}
+                    value={form.taskPrompt}
+                    onChange={(e) => setForm((f) => ({ ...f, taskPrompt: e.target.value }))}
+                    placeholder="Можно оставить пустым, если достаточно фото или только кнопки в боте"
+                  />
+                </label>
+                <label className="admin-label">
+                  Действие в боте
+                  <select
+                    className="admin-input"
+                    value={form.taskKind}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        taskKind: e.target.value as "QUIZ" | "CONFIRM",
+                      }))
+                    }
+                  >
+                    <option value="CONFIRM">Одна кнопка «Подтверждаю»</option>
+                    <option value="QUIZ">Квиз (кнопки с вариантами)</option>
+                  </select>
+                </label>
+                {form.taskKind === "QUIZ" ? (
+                  <>
+                    <label className="admin-label">
+                      Варианты (JSON-массив строк)
+                      <textarea
+                        className="admin-textarea"
+                        rows={6}
+                        value={form.quizOptionsText}
+                        onChange={(e) => setForm((f) => ({ ...f, quizOptionsText: e.target.value }))}
+                      />
+                    </label>
+                    <label className="admin-label">
+                      Верный вариант — индекс (0 = первый в списке)
+                      <input
+                        className="admin-input"
+                        type="number"
+                        min={0}
+                        value={form.correctIndex}
+                        onChange={(e) =>
+                          setForm((f) => ({
+                            ...f,
+                            correctIndex: Math.max(0, Number.parseInt(e.target.value, 10) || 0),
+                          }))
+                        }
+                      />
+                    </label>
+                  </>
+                ) : null}
+                <div className="admin-row" style={{ flexWrap: "wrap", alignItems: "flex-end", gap: "1rem" }}>
+                  <label className="admin-label admin-file" style={{ marginBottom: 0 }}>
+                    Фото к тесту (необязательно)
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        setPendingTestImage(f ?? null);
+                      }}
+                    />
+                  </label>
+                  {pendingTestImage ? (
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--primary"
+                      onClick={() => void uploadTestImage(pendingTestImage)}
+                    >
+                      Загрузить фото теста
+                    </button>
+                  ) : null}
+                </div>
+                {pendingTestImage ? (
+                  <p className="admin-muted" style={{ margin: "0.25rem 0 0" }}>
+                    Выбран файл: <span className="mono">{pendingTestImage.name}</span>
+                  </p>
+                ) : null}
+                {current?.testImageFilename ? (
+                  <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem", alignItems: "flex-start" }}>
+                    <img
+                      className="admin-media-img"
+                      src={`/uploads/${current.testImageFilename}`}
+                      alt=""
+                      style={{ maxHeight: 220, borderRadius: 8 }}
+                    />
+                    <button type="button" className="admin-btn admin-btn--danger" onClick={() => void deleteTestImage()}>
+                      Убрать фото теста
+                    </button>
+                  </div>
+                ) : null}
+                <p className="admin-muted" style={{ marginTop: "1rem" }}>
+                  Не забудьте сохранить текст и настройки квиза кнопкой ниже.
+                </p>
+                <button type="button" className="admin-btn admin-btn--primary" onClick={saveDay}>
+                  Сохранить день
+                </button>
+              </section>
+
               <section className="admin-section admin-upload">
                 <h2>Материалы дня (файлы)</h2>
                 <p className="admin-muted">
-                  Выберите тип, при необходимости введите подпись, выберите файл и нажмите «Загрузить на сервер». Порядок на
-                  сайте — по очереди загрузок. Для «фото с текстом» подпись обязательна; для остальных — по желанию.
+                  Можно загрузить несколько файлов подряд — на сайте они показываются каруселью (стрелки, точки внизу, свайп).
+                  Порядок слайдов — как очередь загрузок. Для «фото с текстом» подпись обязательна; для остальных — по желанию.
                 </p>
                 <div className="admin-upload-controls">
                   <label className="admin-label">

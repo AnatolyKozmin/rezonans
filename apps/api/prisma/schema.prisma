@@ -35,6 +35,8 @@ model AdventDay {
   taskKind       String   // QUIZ | CONFIRM
   quizOptions    String?  // JSON string array
   correctIndex   Int?
+  /// Иллюстрация к тесту (путь от корня uploads), необязательно
+  testImageFilename String?
 
   progress AdventProgress[]
   media    AdventDayMedia[]

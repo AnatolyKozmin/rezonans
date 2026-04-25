@@ -36,10 +36,17 @@ publicRouter.get("/advent", async (_req, res) => {
   });
   const current = currentAdventDayNumber();
   const days = rows.map((d) => {
-    const { correctIndex: _c, quizOptions: qRaw, media, ...rest } = d;
+    const {
+      correctIndex: _c,
+      quizOptions: qRaw,
+      media,
+      testImageFilename: tif,
+      ...rest
+    } = d;
     return {
       ...rest,
       quizOptions: qRaw ? JSON.parse(qRaw) : null,
+      testImageUrl: tif ? `/uploads/${tif}` : null,
       unlocked: isAdventDayUnlocked(d.day),
       media: media.map(mapMedia),
     };

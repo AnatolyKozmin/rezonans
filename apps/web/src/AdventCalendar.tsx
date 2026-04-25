@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 
 export type AdventMediaPublic = {
   id: string;
@@ -17,6 +17,9 @@ export type AdventDayPublic = {
   videoUrl?: string | null;
   extraText?: string | null;
   taskPrompt: string;
+  taskKind?: string;
+  quizOptions?: string[] | null;
+  testImageUrl?: string | null;
   unlocked: boolean;
   media?: AdventMediaPublic[];
 };
@@ -25,6 +28,119 @@ type AdventPayload = {
   currentAdventDay: number | null;
   days: AdventDayPublic[];
 };
+
+function sortAdventMedia(media: AdventMediaPublic[]) {
+  return [...media].sort((a, b) => a.position - b.position);
+}
+
+function hasPublicTestBlock(d: AdventDayPublic): boolean {
+  if (d.testImageUrl) return true;
+  if (d.taskPrompt?.trim()) return true;
+  if (d.taskKind === "QUIZ" && d.quizOptions && d.quizOptions.length > 0) return true;
+  return false;
+}
+
+function AdventMediaSlide({ m }: { m: AdventMediaPublic }) {
+  return (
+    <figure className="advent-media-block">
+      {m.kind === "VIDEO" ? (
+        <video className="advent-media-video" controls playsInline src={m.url} preload="metadata" />
+      ) : (
+        <img className="advent-media-image" src={m.url} alt="" loading="lazy" decoding="async" />
+      )}
+      {m.caption ? <figcaption className="advent-media-cap">{m.caption}</figcaption> : null}
+    </figure>
+  );
+}
+
+/** Несколько плашек/фото/видео — листаются кнопками, точками и свайпом. */
+function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; dayKey: number }) {
+  const sorted = useMemo(() => sortAdventMedia(media), [media]);
+  const [idx, setIdx] = useState(0);
+  const touchStartX = useRef<number | null>(null);
+
+  useEffect(() => {
+    setIdx(0);
+  }, [dayKey]);
+
+  useEffect(() => {
+    setIdx((i) => Math.min(i, Math.max(0, sorted.length - 1)));
+  }, [sorted.length]);
+
+  if (sorted.length === 0) return null;
+  if (sorted.length === 1) {
+    return (
+      <div className="advent-media-stack">
+        <AdventMediaSlide m={sorted[0]} />
+      </div>
+    );
+  }
+
+  const go = (dir: -1 | 1) => {
+    setIdx((i) => Math.max(0, Math.min(sorted.length - 1, i + dir)));
+  };
+
+  const onTouchStart = (e: TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const onTouchEnd = (e: TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    touchStartX.current = null;
+    if (dx > 56) go(-1);
+    else if (dx < -56) go(1);
+  };
+
+  const m = sorted[idx];
+
+  return (
+    <div
+      className="advent-media-carousel"
+      role="region"
+      aria-roledescription="карусель"
+      aria-label={`Материалы дня, слайд ${idx + 1} из ${sorted.length}`}
+    >
+      <div className="advent-media-carousel__viewport" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        <div key={m.id} className="advent-media-carousel__slide">
+          <AdventMediaSlide m={m} />
+        </div>
+        <button
+          type="button"
+          className="advent-media-carousel__nav advent-media-carousel__nav--prev"
+          onClick={() => go(-1)}
+          disabled={idx <= 0}
+          aria-label="Предыдущий материал"
+        >
+          <span aria-hidden>‹</span>
+        </button>
+        <button
+          type="button"
+          className="advent-media-carousel__nav advent-media-carousel__nav--next"
+          onClick={() => go(1)}
+          disabled={idx >= sorted.length - 1}
+          aria-label="Следующий материал"
+        >
+          <span aria-hidden>›</span>
+        </button>
+      </div>
+      <div className="advent-media-carousel__dots" role="tablist" aria-label="Выбор слайда">
+        {sorted.map((item, i) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={i === idx}
+            className={`advent-media-carousel__dot ${i === idx ? "is-active" : ""}`}
+            onClick={() => setIdx(i)}
+            aria-label={`Материал ${i + 1} из ${sorted.length}`}
+          />
+        ))}
+      </div>
+      <p className="advent-media-carousel__hint">Свайп влево / вправо или стрелки — несколько материалов дня</p>
+    </div>
+  );
+}
 
 export function AdventCalendar() {
   const [payload, setPayload] = useState<AdventPayload | null>(null);
@@ -118,18 +234,7 @@ export function AdventCalendar() {
                   {active.extraText ? <p className="advent-extra">{active.extraText}</p> : null}
 
                   {active.media && active.media.length > 0 ? (
-                    <div className="advent-media-stack">
-                      {active.media.map((m) => (
-                        <figure key={m.id} className="advent-media-block">
-                          {m.kind === "VIDEO" ? (
-                            <video className="advent-media-video" controls playsInline src={m.url} preload="metadata" />
-                          ) : (
-                            <img className="advent-media-image" src={m.url} alt="" loading="lazy" decoding="async" />
-                          )}
-                          {m.caption ? <figcaption className="advent-media-cap">{m.caption}</figcaption> : null}
-                        </figure>
-                      ))}
-                    </div>
+                    <AdventMediaCarousel media={active.media} dayKey={active.day} />
                   ) : null}
 
                   <div className="advent-links">
@@ -144,9 +249,31 @@ export function AdventCalendar() {
                       </a>
                     ) : null}
                   </div>
-                  <p className="advent-task-hint">
-                    <strong>Подсказка:</strong> {active.taskPrompt}
-                  </p>
+                  {hasPublicTestBlock(active) ? (
+                    <div className="advent-test-block">
+                      <h4 className="advent-test-title">Тест дня</h4>
+                      {active.testImageUrl ? (
+                        <img
+                          className="advent-test-image"
+                          src={active.testImageUrl}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ) : null}
+                      {active.taskPrompt?.trim() ? (
+                        <p className="advent-test-prompt">{active.taskPrompt}</p>
+                      ) : null}
+                      {active.taskKind === "QUIZ" && active.quizOptions && active.quizOptions.length > 0 ? (
+                        <ol className="advent-quiz-options">
+                          {active.quizOptions.map((opt, i) => (
+                            <li key={i}>{opt}</li>
+                          ))}
+                        </ol>
+                      ) : null}
+                      <p className="advent-task-note">Ответ и зачёт — в Telegram-боте.</p>
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <div className="advent-locked-panel">

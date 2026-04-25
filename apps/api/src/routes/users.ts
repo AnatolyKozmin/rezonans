@@ -72,10 +72,11 @@ usersRouter.get("/:telegramId/advent", async (req, res) => {
   const pmap = new Map(progress.map((p) => [p.day, p]));
   const current = currentAdventDayNumber();
   const payload = days.map((d) => {
-    const { correctIndex: _c, media, ...rest } = d;
+    const { correctIndex: _c, media, testImageFilename: tif, ...rest } = d;
     return {
       ...rest,
       quizOptions: d.quizOptions ? JSON.parse(d.quizOptions) : null,
+      testImageUrl: tif ? `/uploads/${tif}` : null,
       unlocked: isAdventDayUnlocked(d.day),
       progress: pmap.get(d.day) ?? null,
       media: media.map((m) => ({

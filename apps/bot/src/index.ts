@@ -93,6 +93,7 @@ bot.action(/advent:(\d+)/, async (ctx) => {
       taskPrompt: string;
       taskKind: string;
       quizOptions: string[] | null;
+      testImageUrl?: string | null;
       unlocked: boolean;
       progress: { taskCompletedAt: string | null } | null;
     }>;
@@ -109,36 +110,80 @@ bot.action(/advent:(\d+)/, async (ctx) => {
   await api.viewDay(tid, day);
   await ctx.answerCbQuery();
 
+  const testPhotoUrl = d.testImageUrl
+    ? new URL(d.testImageUrl, botConfig.apiBase).toString()
+    : null;
+
   let text =
     `📌 *${d.title}*\n_${d.shortSummary}_\n\n` +
     (d.extraText ? `${d.extraText}\n\n` : "");
   if (d.articleUrl) text += `📰 Статья: ${d.articleUrl}\n`;
   if (d.videoUrl) text += `🎬 Видео: ${d.videoUrl}\n`;
-  text += `\n*Задание:* ${d.taskPrompt}`;
+
+  const promptLine = d.taskPrompt.trim();
+  if (promptLine) {
+    text += `\n*Тест:* ${promptLine}`;
+  } else if (d.taskKind === "QUIZ" && d.quizOptions?.length) {
+    text += `\n*Тест:* выберите верный вариант ниже.`;
+  } else if (d.taskKind === "CONFIRM") {
+    text += `\n*Тест:* подтвердите выполнение кнопкой ниже.`;
+  }
+
+  const captionMax = 1024;
+  const doneSuffix = "\n\n✅ Задание уже выполнено.";
+
+  const sendDone = async () => {
+    const full = text + doneSuffix;
+    if (testPhotoUrl && full.length <= captionMax) {
+      await ctx.replyWithPhoto(testPhotoUrl, {
+        caption: full,
+        parse_mode: "Markdown",
+      });
+    } else if (testPhotoUrl) {
+      await ctx.replyWithPhoto(testPhotoUrl, {
+        caption: "Иллюстрация к тесту",
+      });
+      await ctx.reply(full, { parse_mode: "Markdown" });
+    } else {
+      await ctx.reply(full, { parse_mode: "Markdown" });
+    }
+  };
 
   if (d.progress?.taskCompletedAt) {
-    await ctx.reply(text + "\n\n✅ Задание уже выполнено.", {
-      parse_mode: "Markdown",
-    });
+    await sendDone();
     return;
   }
 
-  if (d.taskKind === "QUIZ" && d.quizOptions?.length) {
-    const keys = d.quizOptions.map((_, i) =>
-      Markup.button.callback(`Вариант ${i + 1}`, `quiz:${day}:${i}`)
-    );
-    const rows: ReturnType<typeof Markup.button.callback>[][] = [];
-    for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
+  const quizKb =
+    d.taskKind === "QUIZ" && d.quizOptions?.length
+      ? (() => {
+          const keys = d.quizOptions.map((_, i) =>
+            Markup.button.callback(`Вариант ${i + 1}`, `quiz:${day}:${i}`)
+          );
+          const rows: ReturnType<typeof Markup.button.callback>[][] = [];
+          for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
+          return Markup.inlineKeyboard(rows);
+        })()
+      : Markup.inlineKeyboard([[Markup.button.callback("Подтверждаю", `conf:${day}`)]]);
+
+  if (testPhotoUrl && text.length <= captionMax) {
+    await ctx.replyWithPhoto(testPhotoUrl, {
+      caption: text,
+      parse_mode: "Markdown",
+      ...quizKb,
+    });
+  } else if (testPhotoUrl) {
+    await ctx.replyWithPhoto(testPhotoUrl, {
+      caption: "Иллюстрация к тесту",
+    });
     await ctx.reply(text, {
       parse_mode: "Markdown",
-      ...Markup.inlineKeyboard(rows),
+      ...quizKb,
     });
   } else {
     await ctx.reply(text, {
       parse_mode: "Markdown",
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback("Подтверждаю", `conf:${day}`)],
-      ]),
+      ...quizKb,
     });
   }
 });

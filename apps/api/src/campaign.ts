@@ -1,4 +1,4 @@
-import { getCampaignStart, config } from "./config.js";
+import { config } from "./config.js";
 
 function parseYmd(s: string): { y: number; m: number; d: number } {
   const [y, m, d] = s.split("-").map(Number);
@@ -42,6 +42,7 @@ export function currentAdventDayNumber(now = new Date()): number | null {
 
 /** День N доступен по календарю */
 export function isAdventDayUnlocked(day: number, now = new Date()): boolean {
+  if (config.testingUnlockAllAdvent) return true;
   const cur = currentAdventDayNumber(now);
   if (cur === null) return false;
   return day <= cur;

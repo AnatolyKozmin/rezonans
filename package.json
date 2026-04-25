@@ -13,7 +13,8 @@
     "dev:bot": "npm run dev -w @rezonans/bot",
     "dev:web": "npm run dev -w @rezonans/web",
     "dev:site": "concurrently -n api,web -c blue,green \"npm run dev:api\" \"npm run dev:web\"",
-    "dev": "concurrently -n api,bot,web -c blue,magenta,green \"npm run dev:api\" \"npm run dev:bot\" \"npm run dev:web\""
+    "dev": "concurrently -n api,bot,web -c blue,magenta,green \"npm run dev:api\" \"npm run dev:bot\" \"npm run dev:web\"",
+    "test": "npm run test -w @rezonans/api"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

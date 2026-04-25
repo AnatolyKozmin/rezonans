@@ -642,6 +642,101 @@ a:hover {
   margin: 0 0 1.25rem;
 }
 
+.advent-media-carousel {
+  margin: 0 0 1.25rem;
+}
+
+.advent-media-carousel__viewport {
+  position: relative;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+}
+
+.advent-media-carousel__slide .advent-media-block {
+  margin: 0;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+}
+
+.advent-media-carousel__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, opacity 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.advent-media-carousel__nav:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.advent-media-carousel__nav:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.advent-media-carousel__nav--prev {
+  left: 0.5rem;
+}
+
+.advent-media-carousel__nav--next {
+  right: 0.5rem;
+}
+
+.advent-media-carousel__dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+
+.advent-media-carousel__dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.advent-media-carousel__dot:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.advent-media-carousel__dot.is-active {
+  background: var(--accent-lime);
+  transform: scale(1.35);
+}
+
+.advent-media-carousel__hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  text-align: center;
+  line-height: 1.35;
+}
+
 .advent-media-block {
   margin: 0;
   border-radius: var(--radius-md);
@@ -722,8 +817,56 @@ a:hover {
   color: var(--text);
 }
 
+.advent-test-block {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--stroke);
+  max-width: 58ch;
+}
+
+.advent-test-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.advent-test-image {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  margin: 0 0 0.75rem;
+}
+
+.advent-test-prompt {
+  margin: 0 0 0.65rem;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.advent-quiz-options {
+  margin: 0 0 0.65rem;
+  padding-left: 1.25rem;
+  color: var(--text-soft);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.advent-quiz-options li {
+  margin-bottom: 0.35rem;
+}
+
 .advent-task-note {
+  margin: 0;
   opacity: 0.85;
+  font-size: 0.88rem;
+  color: var(--text-soft);
 }
 
 .advent-locked-panel {

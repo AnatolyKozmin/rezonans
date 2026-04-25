@@ -5,12 +5,11 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { adminAuth } from "../middleware.js";
 import { uploadsRoot } from "../paths.js";
-import { adventUpload, relativeAdventFile } from "../uploadMulter.js";
+import { adventUpload, adventTestImageUpload, relativeAdventFile } from "../uploadMulter.js";
 
 export const adminAdventRouter = Router();
 adminAdventRouter.use(adminAuth);
 
-/** Тело из админки: только контент для сайта. Задание/квиз в БД выставляются фиксированно (без настройки в UI). */
 const PutDaySite = z.object({
   title: z.string(),
   materialType: z.string(),
@@ -18,15 +17,11 @@ const PutDaySite = z.object({
   articleUrl: z.string().nullable().optional(),
   videoUrl: z.string().nullable().optional(),
   extraText: z.string().nullable().optional(),
+  taskPrompt: z.string(),
+  taskKind: z.enum(["QUIZ", "CONFIRM"]),
+  quizOptions: z.array(z.string()).optional().nullable(),
+  correctIndex: z.number().int().min(0).optional().nullable(),
 });
-
-/** Нейтральное задание для совместимости API/прогресса; на сайте показывается как подсказка. */
-const ADVENT_TASK_BACKEND = {
-  taskPrompt: "Ознакомьтесь с материалами дня на сайте.",
-  taskKind: "CONFIRM",
-  quizOptions: null as string | null,
-  correctIndex: null as number | null,
-};
 
 function defaultAdventDay(day: number) {
   return {
@@ -36,11 +31,17 @@ function defaultAdventDay(day: number) {
     articleUrl: null as string | null,
     videoUrl: null as string | null,
     extraText: null as string | null,
-    ...ADVENT_TASK_BACKEND,
+    taskPrompt: "",
+    taskKind: "CONFIRM",
+    quizOptions: null as string | null,
+    correctIndex: null as number | null,
   };
 }
 
 function adventDayPayloadFromSite(d: z.infer<typeof PutDaySite>) {
+  const quizOptions =
+    d.taskKind === "QUIZ" ? JSON.stringify(d.quizOptions ?? []) : null;
+  const correctIndex = d.taskKind === "QUIZ" ? (d.correctIndex ?? 0) : null;
   return {
     title: d.title,
     materialType: d.materialType,
@@ -48,8 +49,23 @@ function adventDayPayloadFromSite(d: z.infer<typeof PutDaySite>) {
     articleUrl: d.articleUrl ?? null,
     videoUrl: d.videoUrl ?? null,
     extraText: d.extraText ?? null,
-    ...ADVENT_TASK_BACKEND,
+    taskPrompt: d.taskPrompt,
+    taskKind: d.taskKind,
+    quizOptions,
+    correctIndex,
   };
+}
+
+function unlinkUploadRel(rel: string | null | undefined) {
+  if (!rel) return;
+  const abs = path.join(uploadsRoot, rel);
+  if (fs.existsSync(abs)) {
+    try {
+      fs.unlinkSync(abs);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 const Kind = z.enum(["IMAGE", "IMAGE_TEXT", "VIDEO"]);
@@ -223,4 +239,64 @@ adminAdventRouter.delete("/media/:id", async (req, res) => {
   }
   await prisma.adventDayMedia.delete({ where: { id } });
   res.json({ ok: true });
+});
+
+adminAdventRouter.post(
+  "/days/:day/test-image",
+  (req, res, next) => {
+    const day = Number(req.params.day);
+    if (!Number.isInteger(day) || day < 1 || day > 21) {
+      res.status(400).json({ error: "invalid day" });
+      return;
+    }
+    adventTestImageUpload(day).single("file")(req, res, (err: unknown) => {
+      if (err) {
+        res.status(400).json({ error: String((err as Error).message ?? err) });
+        return;
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    const day = Number(req.params.day);
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: "file required" });
+      return;
+    }
+
+    const rel = relativeAdventFile(day, file.filename);
+    const prev = await prisma.adventDay.findUnique({ where: { day } });
+    if (prev?.testImageFilename && prev.testImageFilename !== rel) {
+      unlinkUploadRel(prev.testImageFilename);
+    }
+
+    const updated = await prisma.adventDay.upsert({
+      where: { day },
+      create: { day, ...defaultAdventDay(day), testImageFilename: rel },
+      update: { testImageFilename: rel },
+      include: { media: { orderBy: { position: "asc" } } },
+    });
+    res.json(updated);
+  }
+);
+
+adminAdventRouter.delete("/days/:day/test-image", async (req, res) => {
+  const day = Number(req.params.day);
+  if (!Number.isInteger(day) || day < 1 || day > 21) {
+    res.status(400).json({ error: "invalid day" });
+    return;
+  }
+  const row = await prisma.adventDay.findUnique({ where: { day } });
+  if (!row) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  unlinkUploadRel(row.testImageFilename);
+  const updated = await prisma.adventDay.update({
+    where: { day },
+    data: { testImageFilename: null },
+    include: { media: { orderBy: { position: "asc" } } },
+  });
+  res.json(updated);
 });

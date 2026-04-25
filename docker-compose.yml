@@ -29,6 +29,8 @@ services:
       CAMPAIGN_START_DATE: ${CAMPAIGN_START_DATE:-2026-04-14}
       TZ: ${TZ:-Europe/Moscow}
       ADVENT_REMINDER_HOURS: ${ADVENT_REMINDER_HOURS:-24}
+      # Для демо/теста UI: открыть все дни адвента (в проде не включать)
+      TESTING_UNLOCK_ALL_ADVENT: ${TESTING_UNLOCK_ALL_ADVENT:-}
     volumes:
       - ./apps/api/data:/app/apps/api/data
       - ./apps/api/uploads:/app/apps/api/uploads
