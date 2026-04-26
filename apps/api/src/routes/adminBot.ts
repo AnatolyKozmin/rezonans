@@ -1,7 +1,10 @@
 import { Router } from "express";
+import fs from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { adminAuth } from "../middleware.js";
+import { uploadsRoot } from "../paths.js";
 
 export const adminBotRouter = Router();
 adminBotRouter.use(adminAuth);
@@ -99,3 +102,110 @@ adminBotRouter.post("/giveaways/:id/pick", async (req, res) => {
 
   res.json({ ok: true, winnerTelegramId: u.telegramId, winnerName, totalEntries: entries.length });
 });
+
+// ─── Participants ─────────────────────────────────────────────────────────────
+
+adminBotRouter.get("/users", async (_req, res) => {
+  const users = await prisma.user.findMany({
+    orderBy: { createdAt: "desc" },
+    include: {
+      _count: { select: { adventProgress: true } },
+    },
+  });
+
+  const completedCounts = await prisma.adventProgress.groupBy({
+    by: ["userId"],
+    where: { taskCompletedAt: { not: null } },
+    _count: { _all: true },
+  });
+  const ccMap = new Map(completedCounts.map((c) => [c.userId, c._count._all]));
+
+  res.json(users.map((u) => ({
+    id: u.id,
+    telegramId: u.telegramId,
+    username: u.username,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    fullName: u.fullName,
+    age: u.age,
+    university: u.university,
+    pdConsentAt: u.pdConsentAt,
+    createdAt: u.createdAt,
+    lastActivityAt: u.lastActivityAt,
+    completedDays: ccMap.get(u.id) ?? 0,
+  })));
+});
+
+adminBotRouter.get("/users/:telegramId/results", async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: req.params.telegramId } });
+  if (!user) { res.status(404).json({ error: "not found" }); return; }
+
+  const progresses = await prisma.adventProgress.findMany({
+    where: { userId: user.id, taskCompletedAt: { not: null } },
+    orderBy: { day: "asc" },
+  });
+
+  const dayNums = progresses.map((p) => p.day);
+  const days = await prisma.adventDay.findMany({
+    where: { day: { in: dayNums } },
+    select: { day: true, title: true },
+  });
+  const dayMap = new Map(days.map((d) => [d.day, d.title]));
+
+  const questions = await prisma.adventQuestion.findMany({
+    where: { day: { in: dayNums } },
+    orderBy: { position: "asc" },
+  });
+  const qByDay = new Map<number, typeof questions>();
+  for (const q of questions) {
+    if (!qByDay.has(q.day)) qByDay.set(q.day, []);
+    qByDay.get(q.day)!.push(q);
+  }
+
+  const safeActor = user.telegramId.replace(/[^a-zA-Z0-9_-]/g, "");
+
+  const result = progresses.map((prog) => {
+    const answers: Record<string, unknown> = prog.miniQuizAnswersJson
+      ? JSON.parse(prog.miniQuizAnswersJson)
+      : {};
+
+    // Uploaded images: uploads/advent/{day}/a/{actorId}/
+    const imgDir = path.join(uploadsRoot, "advent", String(prog.day), "a", safeActor);
+    let uploadedImages: string[] = [];
+    try {
+      uploadedImages = fs.readdirSync(imgDir)
+        .filter((f) => /\.(jpe?g|png|gif|webp)$/i.test(f))
+        .map((f) => `/uploads/advent/${prog.day}/a/${safeActor}/${f}`);
+    } catch { /* dir doesn't exist */ }
+
+    const qs = qByDay.get(prog.day) ?? [];
+    const questionsWithAnswers = qs.map((q) => {
+      const ans = answers[q.id];
+      let answerDisplay: string | null = null;
+      if (q.kind === "SINGLE" || q.kind === "MULTI") {
+        const opts: { text: string; correct: boolean }[] = q.optionsJson ? JSON.parse(q.optionsJson) : [];
+        if (q.kind === "SINGLE" && typeof ans === "number") {
+          answerDisplay = opts[ans as number]?.text ?? String(ans);
+        } else if (q.kind === "MULTI" && Array.isArray(ans)) {
+          answerDisplay = (ans as number[]).map((i) => opts[i]?.text ?? String(i)).join(", ");
+        }
+      } else if (q.kind === "TEXT") {
+        answerDisplay = typeof ans === "string" ? ans : null;
+      } else if (q.kind === "IMAGE") {
+        answerDisplay = typeof ans === "string" ? ans : "(фото)";
+      }
+      return { id: q.id, prompt: q.prompt, kind: q.kind, answer: answerDisplay };
+    });
+
+    return {
+      day: prog.day,
+      title: dayMap.get(prog.day) ?? `День ${prog.day}`,
+      completedAt: prog.taskCompletedAt,
+      questions: questionsWithAnswers,
+      uploadedImages,
+    };
+  });
+
+  res.json({ user: { ...user }, results: result });
+});
+
