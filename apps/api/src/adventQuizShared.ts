@@ -74,6 +74,27 @@ export function checkImageUpload(day: number, telegramId: string, ans: unknown):
   return fs.existsSync(abs);
 }
 
+/** Возвращает читаемую метку правильного ответа для показа после сабмита. */
+export function correctAnswerLabel(
+  q: { kind: string; optionsJson: string | null; textAnswersJson: string | null }
+): string | null {
+  if (q.kind === "SINGLE") {
+    const opts = parseOptions(q);
+    const idx = opts.findIndex((o) => o.correct);
+    return idx >= 0 ? opts[idx].text : null;
+  }
+  if (q.kind === "MULTI") {
+    const opts = parseOptions(q);
+    const correct = opts.filter((o) => o.correct).map((o) => o.text);
+    return correct.length > 0 ? correct.join(", ") : null;
+  }
+  if (q.kind === "TEXT") {
+    const accepted = parseTextAnswers(q);
+    return accepted.length > 0 ? accepted[0] : null;
+  }
+  return null; // IMAGE — файл, нет текстового ответа
+}
+
 export function questionForClient(q: {
   id: string;
   position: number;

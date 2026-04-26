@@ -38,13 +38,13 @@ export function relativeAdventFile(day: number, filename: string): string {
   return path.join("advent", String(day), filename).split(path.sep).join("/");
 }
 
-/** Фото-ответ в Mini App: advent/{day}/a/{telegramId}/… */
-export function adventAnswerImageUpload(day: number, telegramId: string) {
-  const safeTid = telegramId.replace(/[^0-9]/g, "");
-  if (!safeTid) {
-    throw new Error("bad_telegram_id");
+/** Фото-ответ: advent/{day}/a/{actorId}/… */
+export function adventAnswerImageUpload(day: number, actorId: string) {
+  const safeActor = actorId.replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!safeActor) {
+    throw new Error("bad_actor_id");
   }
-  const dir = path.join(uploadsRoot, "advent", String(day), "a", safeTid);
+  const dir = path.join(uploadsRoot, "advent", String(day), "a", safeActor);
   fs.mkdirSync(dir, { recursive: true });
 
   const storage = multer.diskStorage({
@@ -71,9 +71,9 @@ export function adventAnswerImageUpload(day: number, telegramId: string) {
 }
 
 /** Относительный путь файла ответа для checkImageUpload */
-export function relativeAdventAnswerFile(day: number, telegramId: string, filename: string): string {
-  const safeTid = telegramId.replace(/[^0-9]/g, "");
-  return path.join("advent", String(day), "a", safeTid, filename).split(path.sep).join("/");
+export function relativeAdventAnswerFile(day: number, actorId: string, filename: string): string {
+  const safeActor = actorId.replace(/[^a-zA-Z0-9_-]/g, "");
+  return path.join("advent", String(day), "a", safeActor, filename).split(path.sep).join("/");
 }
 
 /** Одно изображение к тесту дня (не карусель). */

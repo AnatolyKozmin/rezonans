@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AdventCalendar } from "./AdventCalendar";
 
@@ -11,6 +11,36 @@ type Training = {
 };
 
 type Faq = { q: string; a: string };
+
+function FaqItem({ q, a }: Faq) {
+  const [open, setOpen] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  return (
+    <div className={`faq-item ${open ? "faq-item--open" : ""}`}>
+      <button
+        type="button"
+        className="faq-item__q"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span>{q}</span>
+        <span className="faq-item__icon" aria-hidden>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M4 6.5L9 11.5L14 6.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </span>
+      </button>
+      <div
+        ref={bodyRef}
+        className="faq-item__body"
+        style={{ maxHeight: open ? bodyRef.current?.scrollHeight : 0 }}
+      >
+        <p className="faq-item__a">{a}</p>
+      </div>
+    </div>
+  );
+}
 
 const NAV = [
   { href: "#top", label: "Главная" },
@@ -66,8 +96,7 @@ export function App() {
     /* ignore */
   }
 
-  const bot = site.cta_bot ?? "#";
-  const telegramMiniApp = site.cta_telegram_miniapp?.trim() ?? "";
+  
   const title = site.hero_title ?? "Резонанс";
   const sub = site.hero_sub ?? "";
 
@@ -113,9 +142,6 @@ export function App() {
         <p className="hero-script">поговорим о привычках прямо сейчас</p>
         {sub ? <p className="hero-lead">{sub}</p> : null}
         <div className="cta-row" id="hero-cta">
-          <a className="btn btn-primary" href={bot}>
-            Telegram-бот
-          </a>
           <a className="btn btn-ghost" href="#faq">
             Вопросы и ответы
           </a>
@@ -124,7 +150,7 @@ export function App() {
 
       {err ? <p className="section-title alert">{err}</p> : null}
 
-      <AdventCalendar botUrl={bot} telegramMiniAppBase={telegramMiniApp} />
+      <AdventCalendar />
 
       <h2 className="section-title" id="features">
         Что внутри
@@ -165,17 +191,22 @@ export function App() {
       </h2>
       <div className="faq">
         {faq.map((f) => (
-          <details key={f.q}>
-            <summary>{f.q}</summary>
-            <p>{f.a}</p>
-          </details>
+          <FaqItem key={f.q} q={f.q} a={f.a} />
         ))}
+        {faq.length === 0 ? <p className="muted">Вопросы появятся после наполнения.</p> : null}
       </div>
 
       <h2 className="section-title" id="route">
         Как добраться
       </h2>
       <div className="card">
+        <img
+          src="/route-map.png"
+          alt="Схема маршрута от метро Китай-город"
+          className="route-map-img"
+          loading="lazy"
+          decoding="async"
+        />
         <pre className="route-block">{site.route_md ?? "Текст появится после наполнения."}</pre>
       </div>
 

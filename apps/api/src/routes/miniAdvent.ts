@@ -8,6 +8,7 @@ import {
   checkMulti,
   checkSingle,
   checkText,
+  correctAnswerLabel,
   questionForClient,
 } from "../adventQuizShared.js";
 import { validateWebAppInitData } from "../telegramWebApp.js";
@@ -82,11 +83,12 @@ async function upsertUserFromTelegram(telegramId: string, user: Record<string, u
   });
 }
 
+function normalizeActorId(raw: string): string {
+  return raw.replace(/[^a-zA-Z0-9_-]/g, "");
+}
+
 /** Состояние теста для Mini App */
 miniAdventRouter.get("/advent/:day", async (req, res) => {
-  const token = requireBotToken(res);
-  if (!token) return;
-
   const day = Number(req.params.day);
   if (!Number.isInteger(day) || day < 1 || day > 21) {
     res.status(400).json({ error: "bad_day" });
@@ -98,18 +100,18 @@ miniAdventRouter.get("/advent/:day", async (req, res) => {
   }
 
   const initData = String(req.query.initData ?? "");
-  let telegramId: string;
-  let userPayload: Record<string, unknown>;
-  try {
-    const v = validateWebAppInitData(initData, token);
-    telegramId = v.telegramId;
-    userPayload = v.user;
-  } catch {
-    res.status(401).json({ error: "bad_init" });
-    return;
+  let user: Awaited<ReturnType<typeof upsertUserFromTelegram>> | null = null;
+  if (initData) {
+    const token = requireBotToken(res);
+    if (!token) return;
+    try {
+      const v = validateWebAppInitData(initData, token);
+      user = await upsertUserFromTelegram(v.telegramId, v.user);
+    } catch {
+      res.status(401).json({ error: "bad_init" });
+      return;
+    }
   }
-
-  const user = await upsertUserFromTelegram(telegramId, userPayload);
 
   const dayRow = await prisma.adventDay.findUnique({
     where: { day },
@@ -126,36 +128,39 @@ miniAdventRouter.get("/advent/:day", async (req, res) => {
     where: { day },
     orderBy: { position: "asc" },
   });
+
+  // Дней без теста — только контент
   if (questions.length === 0) {
-    res.status(400).json({ error: "no_questions" });
+    res.json({ completed: false, day, dayContent, questions: [], hasQuiz: false });
     return;
   }
 
-  const prog = await prisma.adventProgress.findUnique({
-    where: { userId_day: { userId: user.id, day } },
-  });
-  if (prog?.taskCompletedAt) {
-    res.json({ completed: true, day, dayContent });
-    return;
+  if (user) {
+    const prog = await prisma.adventProgress.findUnique({
+      where: { userId_day: { userId: user.id, day } },
+    });
+    if (prog?.taskCompletedAt) {
+      res.json({ completed: true, day, dayContent, hasQuiz: true });
+      return;
+    }
   }
 
   res.json({
     completed: false,
     day,
     dayContent,
+    hasQuiz: true,
     questions: questions.map((q) => questionForClient(q)),
   });
 });
 
 const SubmitBody = z.object({
-  initData: z.string(),
+  initData: z.string().optional(),
+  sessionId: z.string().optional(),
   answers: z.record(z.unknown()),
 });
 
 miniAdventRouter.post("/advent/:day/submit", async (req, res) => {
-  const token = requireBotToken(res);
-  if (!token) return;
-
   const day = Number(req.params.day);
   if (!Number.isInteger(day) || day < 1 || day > 21) {
     res.status(400).json({ error: "bad_day" });
@@ -172,18 +177,26 @@ miniAdventRouter.post("/advent/:day/submit", async (req, res) => {
     return;
   }
 
-  let telegramId: string;
-  let userPayload: Record<string, unknown>;
-  try {
-    const v = validateWebAppInitData(parsed.data.initData, token);
-    telegramId = v.telegramId;
-    userPayload = v.user;
-  } catch {
-    res.status(401).json({ error: "bad_init" });
-    return;
+  let user: Awaited<ReturnType<typeof upsertUserFromTelegram>> | null = null;
+  let actorId = "";
+  if (parsed.data.initData) {
+    const token = requireBotToken(res);
+    if (!token) return;
+    try {
+      const v = validateWebAppInitData(parsed.data.initData, token);
+      user = await upsertUserFromTelegram(v.telegramId, v.user);
+      actorId = normalizeActorId(v.telegramId);
+    } catch {
+      res.status(401).json({ error: "bad_init" });
+      return;
+    }
+  } else {
+    actorId = normalizeActorId(parsed.data.sessionId ?? "");
+    if (!actorId) {
+      res.status(400).json({ error: "session_required" });
+      return;
+    }
   }
-
-  const user = await upsertUserFromTelegram(telegramId, userPayload);
 
   const questions = await prisma.adventQuestion.findMany({
     where: { day },
@@ -194,63 +207,73 @@ miniAdventRouter.post("/advent/:day/submit", async (req, res) => {
     return;
   }
 
-  const prog = await prisma.adventProgress.findUnique({
-    where: { userId_day: { userId: user.id, day } },
-  });
-  if (prog?.taskCompletedAt) {
-    res.json({ ok: true, already: true });
-    return;
+  if (user) {
+    const prog = await prisma.adventProgress.findUnique({
+      where: { userId_day: { userId: user.id, day } },
+    });
+    if (prog?.taskCompletedAt) {
+      res.json({ ok: true, already: true });
+      return;
+    }
   }
 
   const { answers } = parsed.data;
   const built: Record<string, unknown> = {};
 
+  type ResultItem = {
+    questionId: string;
+    prompt: string;
+    correct: boolean;
+    correctAnswer: string | null;
+  };
+  const results: ResultItem[] = [];
+  let score = 0;
+
   for (const q of questions) {
     const ans = answers[q.id];
-    if (ans === undefined) {
-      res.status(400).json({ error: "missing_answer", questionId: q.id });
-      return;
+    let correct = false;
+
+    if (ans !== undefined) {
+      if (q.kind === "SINGLE") correct = checkSingle(q, ans);
+      else if (q.kind === "MULTI") correct = checkMulti(q, ans);
+      else if (q.kind === "TEXT") correct = checkText(q, ans);
+      else if (q.kind === "IMAGE") correct = checkImageUpload(day, actorId, ans);
     }
-    let ok = false;
-    if (q.kind === "SINGLE") ok = checkSingle(q, ans);
-    else if (q.kind === "MULTI") ok = checkMulti(q, ans);
-    else if (q.kind === "TEXT") ok = checkText(q, ans);
-    else if (q.kind === "IMAGE") ok = checkImageUpload(day, telegramId, ans);
-    else {
-      res.status(500).json({ error: "bad_question_kind" });
-      return;
-    }
-    if (!ok) {
-      res.status(400).json({ error: "wrong_answer", questionId: q.id });
-      return;
-    }
-    built[q.id] = ans as unknown;
+
+    if (correct) score++;
+    built[q.id] = ans;
+
+    results.push({
+      questionId: q.id,
+      prompt: q.prompt,
+      correct,
+      correctAnswer: correct ? null : correctAnswerLabel(q),
+    });
   }
 
-  await prisma.adventProgress.upsert({
-    where: { userId_day: { userId: user.id, day } },
-    create: {
-      userId: user.id,
-      day,
-      viewedAt: new Date(),
-      taskCompletedAt: new Date(),
-      miniQuizAnswersJson: JSON.stringify(built),
-      confirmDone: true,
-    },
-    update: {
-      taskCompletedAt: new Date(),
-      miniQuizAnswersJson: JSON.stringify(built),
-      confirmDone: true,
-    },
-  });
+  if (user) {
+    await prisma.adventProgress.upsert({
+      where: { userId_day: { userId: user.id, day } },
+      create: {
+        userId: user.id,
+        day,
+        viewedAt: new Date(),
+        taskCompletedAt: new Date(),
+        miniQuizAnswersJson: JSON.stringify(built),
+        confirmDone: true,
+      },
+      update: {
+        taskCompletedAt: new Date(),
+        miniQuizAnswersJson: JSON.stringify(built),
+        confirmDone: true,
+      },
+    });
+  }
 
-  res.json({ ok: true });
+  res.json({ ok: true, score, total: questions.length, results });
 });
 
 miniAdventRouter.post("/advent/:day/question/:qId/image", (req, res, next) => {
-  const token = requireBotToken(res);
-  if (!token) return;
-
   const day = Number(req.params.day);
   const qId = req.params.qId;
   if (!Number.isInteger(day) || day < 1 || day > 21) {
@@ -263,15 +286,26 @@ miniAdventRouter.post("/advent/:day/question/:qId/image", (req, res, next) => {
   }
 
   const initData = String(req.query.initData ?? "");
-  let telegramId: string;
-  try {
-    telegramId = validateWebAppInitData(initData, token).telegramId;
-  } catch {
-    res.status(401).json({ error: "bad_init" });
-    return;
+  const sessionId = String(req.query.sessionId ?? "");
+  let actorId = "";
+  if (initData) {
+    const token = requireBotToken(res);
+    if (!token) return;
+    try {
+      actorId = normalizeActorId(validateWebAppInitData(initData, token).telegramId);
+    } catch {
+      res.status(401).json({ error: "bad_init" });
+      return;
+    }
+  } else {
+    actorId = normalizeActorId(sessionId);
+    if (!actorId) {
+      res.status(400).json({ error: "session_required" });
+      return;
+    }
   }
 
-  const upload = adventAnswerImageUpload(day, telegramId);
+  const upload = adventAnswerImageUpload(day, actorId);
   upload.single("image")(req, res, (err) => {
     if (err) {
       res.status(400).json({ error: String(err.message || err) });
@@ -291,7 +325,7 @@ miniAdventRouter.post("/advent/:day/question/:qId/image", (req, res, next) => {
           res.status(400).json({ error: "bad_question" });
           return;
         }
-        const rel = relativeAdventAnswerFile(day, telegramId, file.filename);
+        const rel = relativeAdventAnswerFile(day, actorId, file.filename);
         res.json({ filename: rel });
       } catch (e) {
         next(e);

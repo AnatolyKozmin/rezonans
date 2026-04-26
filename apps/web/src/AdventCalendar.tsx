@@ -43,53 +43,9 @@ function hasPublicTestBlock(d: AdventDayPublic): boolean {
   return false;
 }
 
-/** Ссылка на бота с deep-link дня для t.me; иначе — общий URL или якорь на CTA. */
-function adventTestBotHref(botUrl: string, day: number): string {
-  const fallback = "#hero-cta";
-  const raw = botUrl.trim();
-  if (!raw || raw === "#") return fallback;
-
-  let href = raw;
-  if (/^t\.me\//i.test(href)) href = `https://${href}`;
-
-  if (!/^https?:\/\//i.test(href)) {
-    return fallback;
-  }
-
-  try {
-    const u = new URL(href);
-    const host = u.hostname.toLowerCase();
-    if (host === "t.me" || host === "telegram.me" || host.endsWith(".t.me")) {
-      u.searchParams.set("start", `advent_${day}`);
-      return u.toString();
-    }
-  } catch {
-    return fallback;
-  }
-
-  return href;
-}
-
-/** Только Mini App в Telegram (квиз не открываем через чат бота). */
-function adventTestTelegramMiniHref(miniAppBase: string, day: number): string {
-  const raw = miniAppBase.trim();
-  if (!raw) return "#advent-miniapp-missing";
-  let href = raw;
-  if (/^t\.me\//i.test(href)) href = `https://${href}`;
-  try {
-    const u = new URL(href);
-    const host = u.hostname.toLowerCase();
-    if (host === "t.me" || host === "telegram.me" || host.endsWith(".t.me")) {
-      const parts = u.pathname.split("/").filter(Boolean);
-      if (parts.length >= 2) {
-        u.searchParams.set("startapp", String(day));
-        return u.toString();
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-  return "#advent-miniapp-missing";
+/** Тест открываем на сайте: /mini/advent/:day */
+function adventTestWebHref(day: number): string {
+  return `/mini/advent/${day}`;
 }
 
 function AdventMediaSlide({ m }: { m: AdventMediaPublic }) {
@@ -194,14 +150,7 @@ function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; da
   );
 }
 
-export function AdventCalendar({
-  botUrl = "#",
-  telegramMiniAppBase = "",
-}: {
-  botUrl?: string;
-  /** https://t.me/bot_username/webapp_short_name — задаётся в админке /admin/site или SiteContent cta_telegram_miniapp */
-  telegramMiniAppBase?: string;
-} = {}) {
+export function AdventCalendar() {
   const [payload, setPayload] = useState<AdventPayload | null>(null);
   const [selected, setSelected] = useState(1);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -209,7 +158,7 @@ export function AdventCalendar({
   const initialScrollDone = useRef(false);
 
   useEffect(() => {
-    (async () => {
+    const loadCalendar = async () => {
       try {
         const r = await fetch("/api/advent");
         if (!r.ok) throw new Error(String(r.status));
@@ -224,8 +173,38 @@ export function AdventCalendar({
       } catch {
         setLoadError("Не удалось загрузить календарь.");
       }
-    })();
+    };
+
+    void loadCalendar();
+
+    // Перезагружаем в момент полуночи по МСК, чтобы открылся новый день без ручного обновления
+    const scheduleRefresh = () => {
+      const now = new Date();
+      const msk = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Moscow",
+        hour: "numeric",
+        minute: "numeric",
+        second: "numeric",
+      }).formatToParts(now);
+      const h = Number(msk.find((p) => p.type === "hour")?.value ?? 0);
+      const m = Number(msk.find((p) => p.type === "minute")?.value ?? 0);
+      const s = Number(msk.find((p) => p.type === "second")?.value ?? 0);
+      const msUntilMidnight = ((23 - h) * 3600 + (59 - m) * 60 + (60 - s)) * 1000;
+      return window.setTimeout(() => {
+        void loadCalendar();
+        // После полуночи перепланируем на следующую
+        window.setTimeout(scheduleRefresh, 1000);
+      }, msUntilMidnight);
+    };
+
+    const t = scheduleRefresh();
+    return () => window.clearTimeout(t);
   }, []);
+
+  const active = useMemo(() => {
+    if (!payload?.days.length) return undefined;
+    return payload.days.find((d) => d.day === selected);
+  }, [payload, selected]);
 
   const scrollDayIntoView = useCallback((day: number, behavior: ScrollBehavior = "smooth") => {
     const root = scrollerRef.current;
@@ -242,23 +221,13 @@ export function AdventCalendar({
     return () => window.clearTimeout(t);
   }, [payload, selected, scrollDayIntoView]);
 
-  const active = useMemo(() => {
-    if (!payload?.days.length) return undefined;
-    return payload.days.find((d) => d.day === selected) ?? payload.days[0];
-  }, [payload, selected]);
-
   const goPrev = () => {
-    if (!payload?.days.length) return;
-    const next = Math.max(1, selected - 1);
-    setSelected(next);
+    setSelected((s) => Math.max(1, s - 1));
   };
 
   const goNext = () => {
-    if (!payload?.days.length) return;
-    const next = Math.min(21, selected + 1);
-    setSelected(next);
+    setSelected((s) => Math.min(21, s + 1));
   };
-
   return (
     <section className="advent-section" id="advent" aria-labelledby="advent-heading">
       <h2 className="section-title" id="advent-heading">
@@ -277,104 +246,93 @@ export function AdventCalendar({
         </p>
       ) : null}
 
-      {payload && payload.days.length > 0 && active ? (
+      {payload ? (
         <div className="advent-shell">
-          <div className="advent-stage" aria-live="polite">
-            <div key={selected} className="advent-stage-inner">
-              <div className="advent-stage-head">
-                <span className="advent-badge">День {active.day}</span>
-                {!active.unlocked ? <span className="advent-lock-pill">скоро</span> : null}
-              </div>
-              <h3 className="advent-stage-title">{active.title}</h3>
-              <p className="advent-stage-summary">{active.shortSummary}</p>
+          {active ? (
+            <div className="advent-stage" aria-live="polite">
+              <div key={selected} className="advent-stage-inner">
+                <div className="advent-stage-head">
+                  <span className="advent-badge">День {active.day}</span>
+                  {!active.unlocked ? <span className="advent-lock-pill">скоро</span> : null}
+                </div>
+                <h3 className="advent-stage-title">{active.title}</h3>
+                <p className="advent-stage-summary">{active.shortSummary}</p>
 
-              {active.unlocked ? (
-                <>
-                  {active.extraText ? <p className="advent-extra">{active.extraText}</p> : null}
+                {active.unlocked ? (
+                  <>
+                    {active.extraText ? <p className="advent-extra">{active.extraText}</p> : null}
 
-                  {active.media && active.media.length > 0 ? (
-                    <AdventMediaCarousel media={active.media} dayKey={active.day} />
-                  ) : null}
-
-                  <div className="advent-links">
-                    {active.articleUrl ? (
-                      <a className="advent-link advent-link--article" href={active.articleUrl} target="_blank" rel="noreferrer">
-                        Открыть статью
-                      </a>
+                    {active.media && active.media.length > 0 ? (
+                      <AdventMediaCarousel media={active.media} dayKey={active.day} />
                     ) : null}
-                    {active.videoUrl ? (
-                      <a className="advent-link advent-link--video" href={active.videoUrl} target="_blank" rel="noreferrer">
-                        Смотреть видео
-                      </a>
-                    ) : null}
-                  </div>
-                  {hasPublicTestBlock(active) ? (
-                    <div className="advent-test-block">
-                      <h4 className="advent-test-title">Тест дня</h4>
-                      {active.testImageUrl ? (
-                        <img
-                          className="advent-test-image"
-                          src={active.testImageUrl}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                        />
+
+                    <div className="advent-links">
+                      {active.articleUrl ? (
+                        <a className="advent-link advent-link--article" href={active.articleUrl} target="_blank" rel="noreferrer">
+                          Открыть статью
+                        </a>
                       ) : null}
-                      {active.taskPrompt?.trim() ? (
-                        <p className="advent-test-prompt">{active.taskPrompt}</p>
+                      {active.videoUrl ? (
+                        <a className="advent-link advent-link--video" href={active.videoUrl} target="_blank" rel="noreferrer">
+                          Смотреть видео
+                        </a>
                       ) : null}
-                      {active.miniQuiz && active.miniQuiz.length > 0 ? (
-                        <ol className="advent-quiz-options">
-                          {active.miniQuiz.map((q) => (
-                            <li key={q.id}>{q.prompt}</li>
-                          ))}
-                        </ol>
-                      ) : null}
-                      {(() => {
-                        const testHref =
-                          active.miniQuiz && active.miniQuiz.length > 0
-                            ? adventTestTelegramMiniHref(telegramMiniAppBase, active.day)
-                            : adventTestBotHref(botUrl, active.day);
-                        const hrefMissing = testHref.startsWith("#");
-                        return (
+                    </div>
+                    {hasPublicTestBlock(active) ? (
+                      <div className="advent-test-block">
+                        <h4 className="advent-test-title">Тест дня</h4>
+                        {active.testImageUrl ? (
+                          <img
+                            className="advent-test-image"
+                            src={active.testImageUrl}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        ) : null}
+                        {active.taskPrompt?.trim() ? (
+                          <p className="advent-test-prompt">{active.taskPrompt}</p>
+                        ) : null}
+                        {active.miniQuiz && active.miniQuiz.length > 0 ? (
                           <>
-                            {hrefMissing ? (
-                              <p className="alert advent-test-config-miss">
-                                Ссылка на Telegram не задана: кнопка не откроет бота. Укажите «Ссылка на бота» в{" "}
-                                <a href="/admin/site">админке → сайт</a> (и при квизе — прямую ссылку Mini App).
-                              </p>
-                            ) : null}
+                            <p className="advent-quiz-count">
+                              {active.miniQuiz.length}{" "}
+                              {active.miniQuiz.length === 1
+                                ? "вопрос"
+                                : active.miniQuiz.length < 5
+                                  ? "вопроса"
+                                  : "вопросов"}
+                            </p>
                             <a
                               className="btn btn-primary advent-test-bot-btn"
-                              href={testHref}
-                              target="_blank"
-                              rel="noreferrer"
+                              href={adventTestWebHref(active.day)}
                             >
                               Пройти тест
                             </a>
                             <p className="advent-task-note">
-                              {hrefMissing
-                                ? "После настройки ссылок перезагрузите страницу."
-                                : active.miniQuiz && active.miniQuiz.length > 0
-                                  ? telegramMiniAppBase.trim()
-                                    ? "Открывается только Mini App в Telegram (материал дня и тест внутри)."
-                                    : "Укажите прямую ссылку Mini App в админке — квиз не идёт через чат бота."
-                                  : "Ссылка откроет бота для зачёта дня без квиза."}
+                              Тест открывается на этом сайте — материал и вопросы в одном окне.
                             </p>
                           </>
-                        );
-                      })()}
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <div className="advent-locked-panel">
-                  <p>Этот день ещё закрыт: контент откроется в свою дату по календарю кампании.</p>
-                  <p className="advent-locked-sub">Активный день кампании совпадает с центральной линией на ленте.</p>
-                </div>
-              )}
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="advent-locked-panel">
+                    <p>Этот день ещё закрыт — откроется по дате кампании.</p>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="advent-stage">
+              <div className="advent-stage-inner">
+                <p className="advent-stage-summary" style={{ color: "var(--text-soft)" }}>
+                  Выберите день из сетки ниже
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="advent-carousel" aria-label="Лента дней адвента">
             <button type="button" className="advent-carousel__nav advent-carousel__nav--prev" onClick={goPrev} aria-label="Предыдущий день">
@@ -383,35 +341,32 @@ export function AdventCalendar({
             <button type="button" className="advent-carousel__nav advent-carousel__nav--next" onClick={goNext} aria-label="Следующий день">
               <span aria-hidden>›</span>
             </button>
-
             <div className="advent-carousel__viewport">
               <div className="advent-carousel__center-line" aria-hidden />
               <div ref={scrollerRef} className="advent-carousel__scroller" role="tablist" aria-label="Дни 1–21">
-                {payload.days.map((d) => {
-                  const isToday = payload.currentAdventDay === d.day;
+                {Array.from({ length: 21 }, (_, i) => i + 1).map((n) => {
+                  const d = payload.days.find((x) => x.day === n);
+                  const isUnlocked = d?.unlocked ?? false;
+                  const isToday = payload.currentAdventDay === n;
+                  const isActive = selected === n;
                   return (
                     <button
-                      key={d.day}
+                      key={n}
                       type="button"
                       role="tab"
-                      data-advent-day={d.day}
-                      aria-label={`День ${d.day}`}
-                      aria-selected={selected === d.day}
+                      data-advent-day={n}
+                      aria-label={`День ${n}${!isUnlocked ? " — закрыт" : ""}`}
+                      aria-selected={isActive}
                       className={[
                         "advent-tile",
-                        selected === d.day ? "is-active" : "",
-                        !d.unlocked ? "is-locked" : "",
+                        isActive ? "is-active" : "",
+                        !isUnlocked ? "is-locked" : "",
                         isToday ? "is-today" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      onClick={() => setSelected(d.day)}
+                      ].filter(Boolean).join(" ")}
+                      onClick={() => setSelected(n)}
                     >
-                      <div className="advent-tile__preview">
-                        <span className="advent-tile__num" aria-hidden>
-                          {d.day}
-                        </span>
-                      </div>
+                      <span className="advent-tile__num" aria-hidden>{n}</span>
+                      {!isUnlocked && <span className="advent-tile__lock" aria-hidden>🔒</span>}
                     </button>
                   );
                 })}

@@ -457,18 +457,26 @@ export function AdminPage() {
           <h2 className="admin-day-panel__title">Дни 1–21</h2>
           <p className="admin-day-panel__hint">Выберите день — ниже откроются поля и файлы для этого номера.</p>
           <div className="admin-day-grid" role="tablist" aria-label="Дни адвента">
-            {Array.from({ length: 21 }, (_, i) => i + 1).map((d) => (
-              <button
-                key={d}
-                type="button"
-                role="tab"
-                aria-selected={selected === d}
-                className={`admin-day-btn ${selected === d ? "is-active" : ""}`}
-                onClick={() => setSelected(d)}
-              >
-                {d}
-              </button>
-            ))}
+            {Array.from({ length: 21 }, (_, i) => i + 1).map((d) => {
+              const dayData = days?.find((x) => x.day === d);
+              const qCount = dayData?.questions?.length ?? null;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected === d}
+                  className={`admin-day-btn ${selected === d ? "is-active" : ""} ${qCount && qCount > 0 ? "has-quiz" : ""}`}
+                  onClick={() => setSelected(d)}
+                  title={qCount !== null ? (qCount > 0 ? `${qCount} вопр.` : "Без теста") : undefined}
+                >
+                  <span className="admin-day-btn__num">{d}</span>
+                  {qCount !== null && qCount > 0 ? (
+                    <span className="admin-day-btn__q" aria-label={`${qCount} вопросов`}>{qCount}</span>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         </section>
 
@@ -650,12 +658,18 @@ export function AdminPage() {
                           marginBottom: "0.75rem",
                         }}
                       >
-                        <div className="admin-row" style={{ flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                        <div className="admin-row" style={{ flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.75rem", alignItems: "center" }}>
                           <span className="admin-badge">#{qi + 1}</span>
+                          <span className="admin-badge" style={{ background: "rgba(126,82,255,0.18)", color: "#c5aaff" }}>
+                            {qd.kind === "SINGLE" ? "Один верный" : qd.kind === "MULTI" ? "Несколько верных" : qd.kind === "TEXT" ? "Текст" : "Фото"}
+                          </span>
+                          <span style={{ flex: 1 }} />
                           <button
                             type="button"
                             className="admin-btn admin-btn--ghost"
+                            style={{ padding: "0.35rem 0.6rem", fontSize: "1rem", minWidth: 0 }}
                             disabled={qi === 0}
+                            title="Переместить вверх"
                             onClick={() =>
                               setQuestionDrafts((list) => {
                                 const next = [...list];
@@ -664,12 +678,14 @@ export function AdminPage() {
                               })
                             }
                           >
-                            Вверх
+                            ↑
                           </button>
                           <button
                             type="button"
                             className="admin-btn admin-btn--ghost"
+                            style={{ padding: "0.35rem 0.6rem", fontSize: "1rem", minWidth: 0 }}
                             disabled={qi >= questionDrafts.length - 1}
+                            title="Переместить вниз"
                             onClick={() =>
                               setQuestionDrafts((list) => {
                                 const next = [...list];
@@ -678,14 +694,15 @@ export function AdminPage() {
                               })
                             }
                           >
-                            Вниз
+                            ↓
                           </button>
                           <button
                             type="button"
                             className="admin-btn admin-btn--danger"
+                            style={{ padding: "0.35rem 0.75rem", fontSize: "0.82rem", minWidth: 0 }}
                             onClick={() => setQuestionDrafts((list) => list.filter((_, i) => i !== qi))}
                           >
-                            Удалить вопрос
+                            Удалить
                           </button>
                         </div>
                         <label className="admin-label">
