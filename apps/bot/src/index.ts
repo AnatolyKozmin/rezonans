@@ -523,21 +523,10 @@ bot.hears("📍 Маршрут до места", async (ctx) => {
 
 bot.hears("📱 Мини-апп", async (ctx) => {
   await ensureUser(ctx);
-  const base = botConfig.miniAppTmeBase.trim();
-  if (!base) {
-    await ctx.reply(`Откройте Мини-апп по ссылке: ${botConfig.webUrl}/mini`);
-    return;
-  }
-  let href = /^t\.me\//i.test(base) ? `https://${base}` : base;
-  try {
-    const u = new URL(href);
-    u.searchParams.delete("startapp");
-    href = u.toString();
-  } catch { /* оставляем как есть */ }
-
+  const webAppUrl = `${botConfig.webUrl}/mini`;
   await ctx.reply(
     "Нажмите кнопку ниже, чтобы открыть Мини-апп кампании «Резонанс»:",
-    Markup.inlineKeyboard([[Markup.button.webApp("🚀 Открыть Мини-апп", href)]])
+    Markup.inlineKeyboard([[Markup.button.webApp("🚀 Открыть Мини-апп", webAppUrl)]])
   );
 });
 
@@ -567,7 +556,7 @@ cron.schedule("0 */2 * * *", async () => {
   }
 });
 
-// ─── Рассылки: бот каждые 2 минуты проверяет очередь ────────────────────────
+// ─── Рассылки: бот каждую минуту проверяет очередь ─────────────────────────
 cron.schedule("* * * * *", async () => {
   try {
     const h: Record<string, string> = {};
@@ -587,6 +576,37 @@ cron.schedule("* * * * *", async () => {
     console.log(`Broadcast sent to ${sent}/${data.telegramIds.length} users`);
   } catch (e) {
     console.error("broadcast cron", e);
+  }
+});
+
+// ─── Напоминание неактивным пользователям Mini App (раз в 12 часов) ─────────
+cron.schedule("0 9,21 * * *", async () => {
+  try {
+    const h: Record<string, string> = {};
+    if (botConfig.internalKey) h["x-internal-key"] = botConfig.internalKey;
+    const r = await fetch(`${botConfig.apiBase}/api/internal/inactive-mini-users`, { headers: h });
+    if (!r.ok) return;
+    const data = await r.json() as { telegramIds: string[] };
+    for (const tid of data.telegramIds) {
+      try {
+        await bot.telegram.sendMessage(
+          tid,
+          `👋 Привет! Ты давно не заходил в адвент-календарь.\n\nОткрывай новые дни — тебя ждут задания и материалы 🎄`,
+          {
+            reply_markup: {
+              inline_keyboard: [[
+                { text: "📱 Открыть Мини-апп", web_app: { url: `${botConfig.webUrl}/mini` } },
+              ]],
+            },
+          }
+        );
+      } catch { /* пользователь заблокировал бота */ }
+    }
+    if (data.telegramIds.length) {
+      console.log(`Inactivity reminders sent to ${data.telegramIds.length} users`);
+    }
+  } catch (e) {
+    console.error("inactivity reminder cron", e);
   }
 });
 

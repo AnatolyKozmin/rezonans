@@ -13,8 +13,16 @@ type Giveaway = {
   winnerName: string | null;
   _count: { entries: number };
 };
+type Stats = {
+  users: { total: number; withConsent: number };
+  opens: { total: number; last24h: number; last7d: number; last30d: number };
+  uniqueUsers7d: number;
+  topPages: { page: string; count: number }[];
+  opensByDay: { date: string; count: number }[];
+  topUsers: { telegramId: string | null; opens: number }[];
+};
 
-type Tab = "admins" | "broadcast" | "giveaways";
+type Tab = "admins" | "broadcast" | "giveaways" | "stats";
 
 export function AdminBotPage() {
   const [savedKey, setSavedKey] = useState(readStoredAdminKey);
@@ -36,6 +44,9 @@ export function AdminBotPage() {
   const [giveaways, setGiveaways] = useState<Giveaway[]>([]);
   const [picking, setPicking] = useState<number | null>(null);
 
+  // stats
+  const [stats, setStats] = useState<Stats | null>(null);
+
   const h = useCallback(
     (): HeadersInit => ({ "content-type": "application/json", "x-admin-key": savedKey }),
     [savedKey]
@@ -45,15 +56,17 @@ export function AdminBotPage() {
     if (!savedKey) return;
     setErr(null);
     try {
-      const [a, b, g] = await Promise.all([
+      const [a, b, g, s] = await Promise.all([
         fetch("/api/admin/bot/admins", { headers: h() }).then((r) => r.json()),
         fetch("/api/admin/bot/broadcasts", { headers: h() }).then((r) => r.json()),
         fetch("/api/admin/bot/giveaways", { headers: h() }).then((r) => r.json()),
+        fetch("/api/admin/bot/stats", { headers: h() }).then((r) => r.json()),
       ]);
       if (a.error) throw new Error(a.error);
       setAdmins(a);
       setBroadcasts(b);
       setGiveaways(g);
+      setStats(s);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Ошибка загрузки");
     }
@@ -140,13 +153,13 @@ export function AdminBotPage() {
       {err && <p className="admin-err">{err}</p>}
 
       <div className="admin-tabs">
-        {(["admins", "broadcast", "giveaways"] as Tab[]).map((t) => (
+        {(["admins", "broadcast", "giveaways", "stats"] as Tab[]).map((t) => (
           <button
             key={t}
             className={`admin-tab-btn${tab === t ? " is-active" : ""}`}
             onClick={() => setTab(t)}
           >
-            {t === "admins" ? "👤 Администраторы" : t === "broadcast" ? "📢 Рассылка" : "🎁 Розыгрыши"}
+            {t === "admins" ? "👤 Администраторы" : t === "broadcast" ? "📢 Рассылка" : t === "giveaways" ? "🎁 Розыгрыши" : "📊 Статистика"}
           </button>
         ))}
       </div>
@@ -265,6 +278,89 @@ export function AdminBotPage() {
               {!giveaways.length && <tr><td colSpan={5} className="muted">Розыгрышей нет</td></tr>}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── Stats ── */}
+      {tab === "stats" && (
+        <div className="admin-section">
+          <h3 className="admin-section-title">Статистика Mini App</h3>
+          {!stats && <p className="muted">Загрузка…</p>}
+          {stats && (
+            <>
+              <div className="stats-kpi-row">
+                <div className="stats-kpi">
+                  <span className="stats-kpi__val">{stats.users.total}</span>
+                  <span className="stats-kpi__label">Пользователей</span>
+                </div>
+                <div className="stats-kpi">
+                  <span className="stats-kpi__val">{stats.users.withConsent}</span>
+                  <span className="stats-kpi__label">Дали согласие</span>
+                </div>
+                <div className="stats-kpi">
+                  <span className="stats-kpi__val">{stats.opens.total}</span>
+                  <span className="stats-kpi__label">Всего открытий</span>
+                </div>
+                <div className="stats-kpi">
+                  <span className="stats-kpi__val">{stats.opens.last24h}</span>
+                  <span className="stats-kpi__label">За 24 часа</span>
+                </div>
+                <div className="stats-kpi">
+                  <span className="stats-kpi__val">{stats.opens.last7d}</span>
+                  <span className="stats-kpi__label">За 7 дней</span>
+                </div>
+                <div className="stats-kpi">
+                  <span className="stats-kpi__val">{stats.uniqueUsers7d}</span>
+                  <span className="stats-kpi__label">Уник. за 7 дней</span>
+                </div>
+              </div>
+
+              <h4 className="admin-section-subtitle">Открытия по дням (последние 30 дней)</h4>
+              <div className="stats-bar-chart">
+                {stats.opensByDay.length === 0 && <p className="muted">Нет данных</p>}
+                {stats.opensByDay.map((d) => {
+                  const max = Math.max(...stats.opensByDay.map((x) => x.count), 1);
+                  return (
+                    <div key={d.date} className="stats-bar-col" title={`${d.date}: ${d.count}`}>
+                      <div className="stats-bar" style={{ height: `${Math.round((d.count / max) * 80)}px` }} />
+                      <span className="stats-bar-label">{d.date.slice(5)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="stats-two-cols">
+                <div>
+                  <h4 className="admin-section-subtitle">Топ страниц</h4>
+                  <table className="admin-table">
+                    <thead><tr><th>Страница</th><th>Открытий</th></tr></thead>
+                    <tbody>
+                      {stats.topPages.map((p) => (
+                        <tr key={p.page}>
+                          <td><code>{p.page}</code></td>
+                          <td>{p.count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div>
+                  <h4 className="admin-section-subtitle">Самые активные пользователи</h4>
+                  <table className="admin-table">
+                    <thead><tr><th>Telegram ID</th><th>Открытий</th></tr></thead>
+                    <tbody>
+                      {stats.topUsers.map((u, i) => (
+                        <tr key={i}>
+                          <td><code>{u.telegramId ?? "—"}</code></td>
+                          <td>{u.opens}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

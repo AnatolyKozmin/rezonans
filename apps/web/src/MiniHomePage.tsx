@@ -17,7 +17,7 @@ type ApiDay = {
   materialType: string;
   shortSummary: string;
   unlocked: boolean;
-  miniQuiz?: { id: string }[];
+  hasQuiz: boolean;
 };
 
 const TYPE_ICON: Record<string, string> = {
@@ -34,19 +34,30 @@ export function MiniHomePage() {
   useEffect(() => {
     try { WebApp.ready(); WebApp.expand(); } catch { /* web page */ }
 
+    // Аналитика
+    const qs = new URLSearchParams();
+    if (WebApp.initData) qs.set("initData", WebApp.initData);
+    const sid = localStorage.getItem("mini_advent_session_id");
+    if (sid) qs.set("sessionId", sid);
+    qs.set("page", "home");
+    fetch("/api/mini/ping", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(qs)) }).catch(() => {});
+
     (async () => {
       try {
-        const r = await fetch("/api/advent");
+        // Персональный прогресс через /api/mini/days (учитывает дату первого входа)
+        const params = new URLSearchParams();
+        if (WebApp.initData) params.set("initData", WebApp.initData);
+        const r = await fetch(`/api/mini/days?${params}`);
         if (!r.ok) throw new Error(String(r.status));
-        const j = await r.json() as { currentAdventDay: number | null; days: ApiDay[] };
-        setCurrentDay(j.currentAdventDay);
+        const j = await r.json() as { currentAdventDay: number | null; effectiveAdventDay: number | null; days: ApiDay[] };
+        setCurrentDay(j.effectiveAdventDay ?? j.currentAdventDay);
         // Показываем все 21 день — отсутствующие в БД заполняем заглушкой
         const byDay = new Map(j.days.map((d) => [d.day, d]));
         const cards: DayCard[] = Array.from({ length: 21 }, (_, i) => {
           const n = i + 1;
           const d = byDay.get(n);
           return d
-            ? { day: n, title: d.title, materialType: d.materialType, shortSummary: d.shortSummary, unlocked: d.unlocked, hasQuiz: (d.miniQuiz?.length ?? 0) > 0 }
+            ? { day: n, title: d.title, materialType: d.materialType, shortSummary: d.shortSummary, unlocked: d.unlocked, hasQuiz: d.hasQuiz ?? false }
             : { day: n, title: `День ${n}`, materialType: "ARTICLE", shortSummary: "", unlocked: false, hasQuiz: false };
         });
         setDays(cards);

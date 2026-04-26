@@ -30,6 +30,31 @@ type UserDetails = {
   results: DayResult[];
 };
 
+function UserOpens({ telegramId, adminKey }: { telegramId: string; adminKey: string }) {
+  const [data, setData] = useState<{ total: number; opens: { page: string; openedAt: string }[] } | null>(null);
+  useEffect(() => {
+    fetch(`/api/admin/bot/users/${telegramId}/opens`, {
+      headers: { "x-admin-key": adminKey },
+    }).then((r) => r.json()).then(setData).catch(() => {});
+  }, [telegramId, adminKey]);
+  if (!data) return null;
+  return (
+    <div className="user-opens">
+      <div className="user-opens__title">📱 Открытий Mini App: <b>{data.total}</b></div>
+      {data.opens.length > 0 && (
+        <div className="user-opens__list">
+          {data.opens.slice(0, 10).map((o, i) => (
+            <span key={i} className="user-opens__item">
+              <code>{o.page}</code> {new Date(o.openedAt).toLocaleString("ru-RU")}
+            </span>
+          ))}
+          {data.total > 10 && <span className="muted">…ещё {data.total - 10}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function displayName(u: UserRow) {
   return u.fullName ?? ([u.firstName, u.lastName].filter(Boolean).join(" ") || u.username || u.telegramId);
 }
@@ -146,6 +171,8 @@ export function AdminUsersPage() {
                       <div><b>Telegram ID:</b> <code>{u.telegramId}</code></div>
                       <div><b>Регистрация:</b> {new Date(u.createdAt).toLocaleString("ru-RU")}</div>
                     </div>
+
+                    <UserOpens telegramId={u.telegramId} adminKey={savedKey} />
 
                     {details[u.telegramId].results.length === 0 && (
                       <p className="muted">Тесты ещё не пройдены.</p>

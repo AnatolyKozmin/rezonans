@@ -59,3 +59,23 @@ export function adventDaysRangeForWeek(week: 1 | 2 | 3): { from: number; to: num
   if (week === 2) return { from: 8, to: 14 };
   return { from: 15, to: 21 };
 }
+
+/**
+ * Персональный прогресс: сколько дней разблокировано для конкретного пользователя.
+ * Если firstOpenAt задан — берём минимум между глобальным днём кампании
+ * и количеством дней с первого открытия (+ 1, так как в день открытия доступен день 1).
+ */
+export function effectiveAdventDayForUser(firstOpenAt: Date | null): number | null {
+  const global = currentAdventDayNumber();
+  if (global === null) return null;           // кампания не началась или закончилась
+  if (!firstOpenAt) return global;            // старые пользователи без firstOpenAt — глобальный прогресс
+  const daysSinceFirst = Math.floor((Date.now() - firstOpenAt.getTime()) / 86_400_000);
+  const personal = daysSinceFirst + 1;        // день 1 — в день первого входа
+  return Math.min(global, personal);
+}
+
+export function isAdventDayUnlockedForUser(day: number, firstOpenAt: Date | null): boolean {
+  const eff = effectiveAdventDayForUser(firstOpenAt);
+  if (eff === null) return false;
+  return day <= eff;
+}

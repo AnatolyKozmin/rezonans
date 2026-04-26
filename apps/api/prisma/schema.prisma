@@ -23,6 +23,9 @@ model User {
   age              Int?
   university       String?
 
+  /// Первое открытие Mini App — отсчёт персонального прогресса
+  miniAppFirstOpenAt DateTime?
+
   adventProgress   AdventProgress[]
   trainingSignups  TrainingSignup[]
   giveawayEntries  GiveawayEntry[]
@@ -176,4 +179,18 @@ model Broadcast {
 model SiteContent {
   key   String @id
   value String // JSON or markdown
+}
+
+/// Аналитика: каждое открытие Mini App
+model MiniAppOpen {
+  id         String   @id @default(cuid())
+  telegramId String?
+  sessionId  String?
+  /// "home" | "advent_1" | "advent_2" | etc.
+  page       String   @default("home")
+  openedAt   DateTime @default(now())
+
+  @@index([telegramId])
+  @@index([openedAt])
+  @@index([page])
 }

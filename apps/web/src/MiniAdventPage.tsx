@@ -161,6 +161,13 @@ export function MiniAdventPage() {
     if (n == null && WebApp.initData) {
       n = parseDayFromStartParam(WebApp.initDataUnsafe?.start_param);
     }
+    // Аналитика
+    const page = n != null ? `advent_${n}` : "advent";
+    const pingBody: Record<string, string> = { page };
+    if (WebApp.initData) pingBody.initData = WebApp.initData;
+    const sid = localStorage.getItem("mini_advent_session_id");
+    if (sid) pingBody.sessionId = sid;
+    fetch("/api/mini/ping", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(pingBody) }).catch(() => {});
     setDay(n);
     setBootReady(true);
   }, [dayParam]);

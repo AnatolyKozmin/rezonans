@@ -58,3 +58,36 @@ internalRouter.get("/pending-broadcast", async (_req, res) => {
 
   res.json({ broadcast: { id: broadcast.id, message: broadcast.message }, telegramIds });
 });
+
+/** Пользователи, которые не открывали Mini App >= 2 дней */
+internalRouter.get("/inactive-mini-users", async (_req, res) => {
+  const threshold = new Date(Date.now() - 2 * 86_400_000);
+
+  // Пользователи у которых miniAppFirstOpenAt установлен и напоминания не отключены
+  const users = await prisma.user.findMany({
+    where: {
+      miniAppFirstOpenAt: { not: null },
+      reminderMuted: false,
+      telegramId: { not: "" },
+    },
+    select: { telegramId: true, miniAppFirstOpenAt: true },
+  });
+
+  // Для каждого проверяем последнее открытие
+  const lastOpens = await prisma.miniAppOpen.groupBy({
+    by: ["telegramId"],
+    where: { telegramId: { not: null } },
+    _max: { openedAt: true },
+  });
+  const lastOpenMap = new Map(lastOpens.map((r) => [r.telegramId, r._max.openedAt]));
+
+  const telegramIds: string[] = [];
+  for (const u of users) {
+    const last = lastOpenMap.get(u.telegramId) ?? u.miniAppFirstOpenAt!;
+    if (last < threshold) {
+      telegramIds.push(u.telegramId);
+    }
+  }
+
+  res.json({ telegramIds });
+});

@@ -103,7 +103,84 @@ adminBotRouter.post("/giveaways/:id/pick", async (req, res) => {
   res.json({ ok: true, winnerTelegramId: u.telegramId, winnerName, totalEntries: entries.length });
 });
 
-// ─── Participants ─────────────────────────────────────────────────────────────
+// ─── Stats ────────────────────────────────────────────────────────────────────
+
+adminBotRouter.get("/stats", async (_req, res) => {
+  const now = new Date();
+  const day1 = new Date(now); day1.setHours(0, 0, 0, 0);
+  const day7 = new Date(day1); day7.setDate(day7.getDate() - 6);
+  const day30 = new Date(day1); day30.setDate(day30.getDate() - 29);
+
+  const [
+    totalUsers,
+    usersWithConsent,
+    totalOpens,
+    opens24h,
+    opens7d,
+    opens30d,
+    uniqueUsers7d,
+    topPages,
+    opensByDay,
+    userOpenCounts,
+  ] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.count({ where: { pdConsentAt: { not: null } } }),
+    prisma.miniAppOpen.count(),
+    prisma.miniAppOpen.count({ where: { openedAt: { gte: new Date(Date.now() - 86400000) } } }),
+    prisma.miniAppOpen.count({ where: { openedAt: { gte: day7 } } }),
+    prisma.miniAppOpen.count({ where: { openedAt: { gte: day30 } } }),
+    prisma.miniAppOpen.groupBy({
+      by: ["telegramId"],
+      where: { openedAt: { gte: day7 }, telegramId: { not: null } },
+      _count: true,
+    }).then((r) => r.length),
+    prisma.miniAppOpen.groupBy({
+      by: ["page"],
+      _count: { _all: true },
+      orderBy: { _count: { page: "desc" } },
+      take: 10,
+    }),
+    // Открытия по дням за последние 30 дней
+    prisma.$queryRaw<{ date: string; count: number }[]>`
+      SELECT date(openedAt) as date, COUNT(*) as count
+      FROM MiniAppOpen
+      WHERE openedAt >= ${day30.toISOString()}
+      GROUP BY date(openedAt)
+      ORDER BY date ASC
+    `,
+    // Сколько раз каждый telegramId открывал мини-апп
+    prisma.miniAppOpen.groupBy({
+      by: ["telegramId"],
+      where: { telegramId: { not: null } },
+      _count: { _all: true },
+      orderBy: { _count: { telegramId: "desc" } },
+      take: 20,
+    }),
+  ]);
+
+  res.json({
+    users: { total: totalUsers, withConsent: usersWithConsent },
+    opens: { total: totalOpens, last24h: opens24h, last7d: opens7d, last30d: opens30d },
+    uniqueUsers7d,
+    topPages: topPages.map((p) => ({ page: p.page, count: p._count._all })),
+    opensByDay: opensByDay.map((r) => ({ date: r.date, count: Number(r.count) })),
+    topUsers: userOpenCounts.map((r) => ({ telegramId: r.telegramId, opens: r._count._all })),
+  });
+});
+
+// ─── Per-user open count ──────────────────────────────────────────────────────
+
+adminBotRouter.get("/users/:telegramId/opens", async (req, res) => {
+  const opens = await prisma.miniAppOpen.findMany({
+    where: { telegramId: req.params.telegramId },
+    orderBy: { openedAt: "desc" },
+    take: 100,
+  });
+  const total = await prisma.miniAppOpen.count({ where: { telegramId: req.params.telegramId } });
+  res.json({ total, opens });
+});
+
+
 
 adminBotRouter.get("/users", async (_req, res) => {
   const users = await prisma.user.findMany({

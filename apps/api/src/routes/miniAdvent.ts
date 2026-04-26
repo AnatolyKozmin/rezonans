@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { config } from "../config.js";
-import { isAdventDayUnlocked } from "../campaign.js";
+import { isAdventDayUnlocked, isAdventDayUnlockedForUser, effectiveAdventDayForUser, currentAdventDayNumber } from "../campaign.js";
 import {
   checkImageUpload,
   checkMulti,
@@ -94,10 +94,6 @@ miniAdventRouter.get("/advent/:day", async (req, res) => {
     res.status(400).json({ error: "bad_day" });
     return;
   }
-  if (!isAdventDayUnlocked(day)) {
-    res.status(403).json({ error: "locked" });
-    return;
-  }
 
   const initData = String(req.query.initData ?? "");
   let user: Awaited<ReturnType<typeof upsertUserFromTelegram>> | null = null;
@@ -110,6 +106,16 @@ miniAdventRouter.get("/advent/:day", async (req, res) => {
     } catch {
       res.status(401).json({ error: "bad_init" });
       return;
+    }
+  }
+
+  // Персональный unlock: если день не открыт глобально — проверяем дату первого входа
+  const globalUnlocked = isAdventDayUnlocked(day);
+  if (!globalUnlocked) {
+    if (!user) { res.status(403).json({ error: "locked" }); return; }
+    const u = await prisma.user.findUnique({ where: { telegramId: user.telegramId }, select: { miniAppFirstOpenAt: true } });
+    if (!isAdventDayUnlockedForUser(day, u?.miniAppFirstOpenAt ?? null)) {
+      res.status(403).json({ error: "locked" }); return;
     }
   }
 
@@ -154,6 +160,75 @@ miniAdventRouter.get("/advent/:day", async (req, res) => {
   });
 });
 
+/** Аналитика: фиксируем открытие страницы Mini App */
+miniAdventRouter.post("/ping", async (req, res) => {
+  const { initData, sessionId, page } = req.body as { initData?: string; sessionId?: string; page?: string };
+  let telegramId: string | null = null;
+  if (initData) {
+    const token = config.telegramBotToken;
+    if (token) {
+      try {
+        const v = validateWebAppInitData(initData, token);
+        telegramId = v.telegramId;
+      } catch { /* игнорируем невалидный initData */ }
+    }
+  }
+
+  // Сохраняем miniAppFirstOpenAt при первом входе
+  if (telegramId) {
+    await prisma.user.updateMany({
+      where: { telegramId, miniAppFirstOpenAt: null },
+      data: { miniAppFirstOpenAt: new Date() },
+    });
+  }
+
+  await prisma.miniAppOpen.create({
+    data: { telegramId, sessionId: sessionId ?? null, page: page ?? "home" },
+  });
+  res.json({ ok: true });
+});
+
+/** Список дней с персональным прогрессом для Mini App Home */
+miniAdventRouter.get("/days", async (req, res) => {
+  const initData = String(req.query.initData ?? "");
+  let firstOpenAt: Date | null = null;
+
+  if (initData) {
+    const token = config.telegramBotToken;
+    if (token) {
+      try {
+        const v = validateWebAppInitData(initData, token);
+        const user = await prisma.user.findUnique({
+          where: { telegramId: v.telegramId },
+          select: { miniAppFirstOpenAt: true },
+        });
+        firstOpenAt = user?.miniAppFirstOpenAt ?? null;
+      } catch { /* анонимный пользователь */ }
+    }
+  }
+
+  const days = await prisma.adventDay.findMany({
+    orderBy: { day: "asc" },
+    include: { _count: { select: { questions: true } } },
+  });
+
+  const currentDay = currentAdventDayNumber();
+  const effectiveDay = effectiveAdventDayForUser(firstOpenAt);
+
+  res.json({
+    currentAdventDay: currentDay,
+    effectiveAdventDay: effectiveDay,
+    days: days.map((d) => ({
+      day: d.day,
+      title: d.title,
+      materialType: d.materialType,
+      shortSummary: d.shortSummary,
+      unlocked: isAdventDayUnlockedForUser(d.day, firstOpenAt),
+      hasQuiz: d._count.questions > 0,
+    })),
+  });
+});
+
 const SubmitBody = z.object({
   initData: z.string().optional(),
   sessionId: z.string().optional(),
@@ -164,10 +239,6 @@ miniAdventRouter.post("/advent/:day/submit", async (req, res) => {
   const day = Number(req.params.day);
   if (!Number.isInteger(day) || day < 1 || day > 21) {
     res.status(400).json({ error: "bad_day" });
-    return;
-  }
-  if (!isAdventDayUnlocked(day)) {
-    res.status(403).json({ error: "locked" });
     return;
   }
 
@@ -195,6 +266,15 @@ miniAdventRouter.post("/advent/:day/submit", async (req, res) => {
     if (!actorId) {
       res.status(400).json({ error: "session_required" });
       return;
+    }
+  }
+
+  // Персональный unlock
+  if (!isAdventDayUnlocked(day)) {
+    if (!user) { res.status(403).json({ error: "locked" }); return; }
+    const u = await prisma.user.findUnique({ where: { telegramId: user.telegramId }, select: { miniAppFirstOpenAt: true } });
+    if (!isAdventDayUnlockedForUser(day, u?.miniAppFirstOpenAt ?? null)) {
+      res.status(403).json({ error: "locked" }); return;
     }
   }
 
