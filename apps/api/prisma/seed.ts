@@ -111,6 +111,7 @@ async function main() {
     await prisma.training.create({ data: t });
   }
 
+  // cta_telegram_miniapp: https://t.me/BOT/SHORT_NAME — SHORT_NAME из @BotFather (Web App). В BotFather URL приложения: https://домен/mini/advent
   const site: Record<string, string> = {
     hero_title: "Резонанс — здоровые привычки в ритме учёбы",
     hero_sub:
@@ -137,6 +138,7 @@ async function main() {
 2. От общежитий — 10–15 минут пешком по схеме во вложении.
 3. Видео-гайд: вставьте ссылку на ваш ролик.`,
     cta_bot: "https://t.me/your_bot_username",
+    cta_telegram_miniapp: "https://t.me/your_bot_username/advent",
   };
 
   for (const [key, value] of Object.entries(site)) {

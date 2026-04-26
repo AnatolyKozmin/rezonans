@@ -38,8 +38,29 @@ model AdventDay {
   /// Иллюстрация к тесту (путь от корня uploads), необязательно
   testImageFilename String?
 
-  progress AdventProgress[]
-  media    AdventDayMedia[]
+  progress  AdventProgress[]
+  media     AdventDayMedia[]
+  questions AdventQuestion[]
+}
+
+/// Вопросы теста дня (Mini App в Telegram). Типы: SINGLE | MULTI | TEXT | IMAGE
+model AdventQuestion {
+  id     String @id @default(cuid())
+  day    Int
+  /// Порядок в тесте
+  position Int    @default(0)
+  prompt String
+  kind   String // SINGLE | MULTI | TEXT | IMAGE
+  /// Для SINGLE/MULTI: JSON [{ "text": string, "correct": boolean }]
+  optionsJson String?
+  /// Для TEXT: JSON string[] допустимых ответов (сравнение trim + lower)
+  textAnswersJson String?
+  /// Иллюстрация к вопросу (путь от uploads), необязательно
+  imageFilename String?
+
+  adventDay AdventDay @relation(fields: [day], references: [day], onDelete: Cascade)
+
+  @@index([day])
 }
 
 /// Материалы дня: фото, фото+текст, видео (файлы в /uploads)
@@ -66,6 +87,8 @@ model AdventProgress {
   taskCompletedAt DateTime?
   quizAnswerIndex Int?
   confirmDone     Boolean  @default(false)
+  /// Ответы квиза (Mini App): JSON { [questionId]: payload }
+  miniQuizAnswersJson String?
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   adventDay AdventDay @relation(fields: [day], references: [day], onDelete: Cascade)

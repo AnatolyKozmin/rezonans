@@ -64,7 +64,10 @@ usersRouter.get("/:telegramId/advent", async (req, res) => {
   }
   const days = await prisma.adventDay.findMany({
     orderBy: { day: "asc" },
-    include: { media: { orderBy: { position: "asc" } } },
+    include: {
+      media: { orderBy: { position: "asc" } },
+      _count: { select: { questions: true } },
+    },
   });
   const progress = await prisma.adventProgress.findMany({
     where: { userId: user.id },
@@ -72,11 +75,12 @@ usersRouter.get("/:telegramId/advent", async (req, res) => {
   const pmap = new Map(progress.map((p) => [p.day, p]));
   const current = currentAdventDayNumber();
   const payload = days.map((d) => {
-    const { correctIndex: _c, media, testImageFilename: tif, ...rest } = d;
+    const { correctIndex: _c, media, testImageFilename: tif, _count, ...rest } = d;
     return {
       ...rest,
       quizOptions: d.quizOptions ? JSON.parse(d.quizOptions) : null,
       testImageUrl: tif ? `/uploads/${tif}` : null,
+      miniQuizQuestionCount: _count.questions,
       unlocked: isAdventDayUnlocked(d.day),
       progress: pmap.get(d.day) ?? null,
       media: media.map((m) => ({
@@ -140,6 +144,11 @@ usersRouter.post("/:telegramId/advent/:day/task", async (req, res) => {
   const meta = await prisma.adventDay.findUnique({ where: { day } });
   if (!meta) {
     res.status(404).json({ error: "No content" });
+    return;
+  }
+  const qCount = await prisma.adventQuestion.count({ where: { day } });
+  if (qCount > 0) {
+    res.status(400).json({ error: "use_mini_app" });
     return;
   }
   let ok = false;

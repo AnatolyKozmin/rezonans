@@ -2,7 +2,6 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { prisma } from "../db.js";
 import { currentAdventDayNumber } from "../campaign.js";
 import { config } from "../config.js";
-
 export const internalRouter = Router();
 
 function internalGate(req: Request, res: Response, next: NextFunction) {

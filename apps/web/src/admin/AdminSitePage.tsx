@@ -13,6 +13,8 @@ export function AdminSitePage() {
   const [saving, setSaving] = useState(false);
   const [faq, setFaq] = useState<FaqRow[]>([{ q: "", a: "" }]);
   const [routeMd, setRouteMd] = useState("");
+  const [ctaBot, setCtaBot] = useState("");
+  const [ctaTelegramMiniapp, setCtaTelegramMiniapp] = useState("");
 
   const authHeaders = useCallback(
     (): HeadersInit => ({
@@ -38,9 +40,16 @@ export function AdminSitePage() {
         return;
       }
       if (!r.ok) throw new Error(await r.text());
-      const data: { faq: FaqRow[]; route_md: string } = await r.json();
+      const data: {
+        faq: FaqRow[];
+        route_md: string;
+        cta_bot?: string;
+        cta_telegram_miniapp?: string;
+      } = await r.json();
       setFaq(data.faq.length ? data.faq : [{ q: "", a: "" }]);
       setRouteMd(data.route_md ?? "");
+      setCtaBot(data.cta_bot ?? "");
+      setCtaTelegramMiniapp(data.cta_telegram_miniapp ?? "");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Ошибка загрузки");
     } finally {
@@ -75,12 +84,24 @@ export function AdminSitePage() {
       const r = await fetch("/api/admin/site", {
         method: "PUT",
         headers: authHeaders(),
-        body: JSON.stringify({ faq: cleaned, route_md: routeMd }),
+        body: JSON.stringify({
+          faq: cleaned,
+          route_md: routeMd,
+          cta_bot: ctaBot,
+          cta_telegram_miniapp: ctaTelegramMiniapp,
+        }),
       });
       if (!r.ok) throw new Error(await r.text());
-      const data: { faq: FaqRow[]; route_md: string } = await r.json();
+      const data: {
+        faq: FaqRow[];
+        route_md: string;
+        cta_bot?: string;
+        cta_telegram_miniapp?: string;
+      } = await r.json();
       setFaq(data.faq.length ? data.faq : [{ q: "", a: "" }]);
       setRouteMd(data.route_md ?? "");
+      setCtaBot(data.cta_bot ?? "");
+      setCtaTelegramMiniapp(data.cta_telegram_miniapp ?? "");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Ошибка сохранения");
     } finally {
@@ -154,6 +175,36 @@ export function AdminSitePage() {
         <p className="admin-muted">Загрузка…</p>
       ) : (
         <>
+          <section className="admin-section">
+            <h2>Telegram и Mini App</h2>
+            <p className="admin-muted" style={{ marginTop: "-0.5rem" }}>
+              Кнопка «Пройти тест» на сайте ведёт по прямой ссылке Mini App (открывается внутри Telegram). Формат:{" "}
+              <span className="mono">https://t.me/имя_бота/short_name</span> — short_name задаётся в @BotFather (Web App). В
+              BotFather укажите URL веб-приложения <span className="mono">https://ваш-домен/mini/advent</span> (без номера дня;
+              день передаётся параметром <span className="mono">startapp</span>). Ту же ссылку <span className="mono">t.me/…</span>{" "}
+              задайте в переменной <span className="mono">TELEGRAM_MINIAPP_TME</span> у сервиса бота в Docker — тогда при нажатии
+              дня в сетке чат не засоряется, откроется только Mini App.
+            </p>
+            <label className="admin-label">
+              Ссылка на бота (как в шапке сайта)
+              <input
+                className="admin-input"
+                value={ctaBot}
+                onChange={(e) => setCtaBot(e.target.value)}
+                placeholder="https://t.me/your_bot"
+              />
+            </label>
+            <label className="admin-label">
+              Прямая ссылка Mini App (t.me/бот/short_name)
+              <input
+                className="admin-input"
+                value={ctaTelegramMiniapp}
+                onChange={(e) => setCtaTelegramMiniapp(e.target.value)}
+                placeholder="https://t.me/your_bot/advent"
+              />
+            </label>
+          </section>
+
           <section className="admin-section">
             <h2>Вопросы и ответы</h2>
             <p className="admin-muted">Пустые строки при сохранении отбрасываются.</p>

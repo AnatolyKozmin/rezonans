@@ -1,4 +1,4 @@
-import { Telegraf, Markup } from "telegraf";
+import { Telegraf, Markup, type Context } from "telegraf";
 import cron from "node-cron";
 import { botConfig } from "./config.js";
 import { api } from "./api.js";
@@ -22,6 +22,117 @@ async function ensureUser(ctx: { from?: { id: number; username?: string; first_n
     lastName: f.last_name,
   });
   return String(f.id);
+}
+
+/** Прямая ссылка Mini App: https://t.me/bot/short?startapp=day */
+function buildMiniAppTmeLink(base: string | undefined, day: number): string | null {
+  const raw = base?.trim() ?? "";
+  if (!raw) return null;
+  let href = raw;
+  if (/^t\.me\//i.test(href)) href = `https://${href}`;
+  try {
+    const u = new URL(href);
+    const host = u.hostname.toLowerCase();
+    if (!(host === "t.me" || host === "telegram.me" || host.endsWith(".t.me"))) return null;
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (parts.length < 2) return null;
+    u.searchParams.set("startapp", String(day));
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+type AdventDayPayload = {
+  day: number;
+  title: string;
+  shortSummary: string;
+  materialType: string;
+  articleUrl?: string | null;
+  videoUrl?: string | null;
+  extraText?: string | null;
+  taskPrompt: string;
+  taskKind: string;
+  quizOptions: string[] | null;
+  testImageUrl?: string | null;
+  miniQuizQuestionCount?: number;
+  unlocked: boolean;
+  progress: { taskCompletedAt: string | null } | null;
+};
+
+/** Дни без квиза в БД — задание и кнопки остаются в чате */
+async function replyLegacyAdventDay(ctx: Context, d: AdventDayPayload, day: number) {
+  const testPhotoUrl = d.testImageUrl
+    ? new URL(d.testImageUrl, botConfig.apiBase).toString()
+    : null;
+
+  let text =
+    `📌 *${d.title}*\n_${d.shortSummary}_\n\n` + (d.extraText ? `${d.extraText}\n\n` : "");
+  if (d.articleUrl) text += `📰 Статья: ${d.articleUrl}\n`;
+  if (d.videoUrl) text += `🎬 Видео: ${d.videoUrl}\n`;
+
+  const promptLine = d.taskPrompt.trim();
+  if (promptLine) text += `\n*Задание:* ${promptLine}`;
+  else text += `\n*Задание:* подтвердите выполнение кнопкой ниже.`;
+
+  const captionMax = 1024;
+  const doneSuffix = "\n\n✅ Задание уже выполнено.";
+
+  const sendDone = async () => {
+    const full = text + doneSuffix;
+    if (testPhotoUrl && full.length <= captionMax) {
+      await ctx.replyWithPhoto(testPhotoUrl, {
+        caption: full,
+        parse_mode: "Markdown",
+      });
+    } else if (testPhotoUrl) {
+      await ctx.replyWithPhoto(testPhotoUrl, {
+        caption: "Иллюстрация",
+      });
+      await ctx.reply(full, { parse_mode: "Markdown" });
+    } else {
+      await ctx.reply(full, { parse_mode: "Markdown" });
+    }
+  };
+
+  if (d.progress?.taskCompletedAt) {
+    await sendDone();
+    return;
+  }
+
+  const confirmKb = Markup.inlineKeyboard([[Markup.button.callback("Подтверждаю", `conf:${day}`)]]);
+  const quizKb =
+    d.taskKind === "QUIZ" && d.quizOptions?.length
+      ? (() => {
+          const keys = d.quizOptions.map((_, i) =>
+            Markup.button.callback(`Вариант ${i + 1}`, `quiz:${day}:${i}`)
+          );
+          const rows: ReturnType<typeof Markup.button.callback>[][] = [];
+          for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
+          return Markup.inlineKeyboard(rows);
+        })()
+      : confirmKb;
+
+  if (testPhotoUrl && text.length <= captionMax) {
+    await ctx.replyWithPhoto(testPhotoUrl, {
+      caption: text,
+      parse_mode: "Markdown",
+      ...quizKb,
+    });
+  } else if (testPhotoUrl) {
+    await ctx.replyWithPhoto(testPhotoUrl, {
+      caption: "Иллюстрация",
+    });
+    await ctx.reply(text, {
+      parse_mode: "Markdown",
+      ...quizKb,
+    });
+  } else {
+    await ctx.reply(text, {
+      parse_mode: "Markdown",
+      ...quizKb,
+    });
+  }
 }
 
 bot.start(async (ctx) => {
@@ -79,25 +190,9 @@ bot.hears("🎄 Адвент", async (ctx) => {
 });
 
 bot.action(/advent:(\d+)/, async (ctx) => {
-  const tid = await ensureUser(ctx);
   const day = Number(ctx.match[1]);
-  const data = (await api.advent(tid)) as {
-    days: Array<{
-      day: number;
-      title: string;
-      shortSummary: string;
-      materialType: string;
-      articleUrl?: string | null;
-      videoUrl?: string | null;
-      extraText?: string | null;
-      taskPrompt: string;
-      taskKind: string;
-      quizOptions: string[] | null;
-      testImageUrl?: string | null;
-      unlocked: boolean;
-      progress: { taskCompletedAt: string | null } | null;
-    }>;
-  };
+  const tid = await ensureUser(ctx);
+  const data = (await api.advent(tid)) as { days: AdventDayPayload[] };
   const d = data.days.find((x) => x.day === day);
   if (!d) {
     await ctx.answerCbQuery("Нет данных");
@@ -108,84 +203,23 @@ bot.action(/advent:(\d+)/, async (ctx) => {
     return;
   }
   await api.viewDay(tid, day);
-  await ctx.answerCbQuery();
 
-  const testPhotoUrl = d.testImageUrl
-    ? new URL(d.testImageUrl, botConfig.apiBase).toString()
-    : null;
-
-  let text =
-    `📌 *${d.title}*\n_${d.shortSummary}_\n\n` +
-    (d.extraText ? `${d.extraText}\n\n` : "");
-  if (d.articleUrl) text += `📰 Статья: ${d.articleUrl}\n`;
-  if (d.videoUrl) text += `🎬 Видео: ${d.videoUrl}\n`;
-
-  const promptLine = d.taskPrompt.trim();
-  if (promptLine) {
-    text += `\n*Тест:* ${promptLine}`;
-  } else if (d.taskKind === "QUIZ" && d.quizOptions?.length) {
-    text += `\n*Тест:* выберите верный вариант ниже.`;
-  } else if (d.taskKind === "CONFIRM") {
-    text += `\n*Тест:* подтвердите выполнение кнопкой ниже.`;
-  }
-
-  const captionMax = 1024;
-  const doneSuffix = "\n\n✅ Задание уже выполнено.";
-
-  const sendDone = async () => {
-    const full = text + doneSuffix;
-    if (testPhotoUrl && full.length <= captionMax) {
-      await ctx.replyWithPhoto(testPhotoUrl, {
-        caption: full,
-        parse_mode: "Markdown",
-      });
-    } else if (testPhotoUrl) {
-      await ctx.replyWithPhoto(testPhotoUrl, {
-        caption: "Иллюстрация к тесту",
-      });
-      await ctx.reply(full, { parse_mode: "Markdown" });
-    } else {
-      await ctx.reply(full, { parse_mode: "Markdown" });
+  const miniQuizCount = d.miniQuizQuestionCount ?? 0;
+  if (miniQuizCount > 0) {
+    const openUrl = buildMiniAppTmeLink(botConfig.miniAppTmeBase, day);
+    if (openUrl) {
+      await ctx.answerCbQuery({ url: openUrl });
+      return;
     }
-  };
-
-  if (d.progress?.taskCompletedAt) {
-    await sendDone();
+    await ctx.answerCbQuery(
+      "Задайте TELEGRAM_MINIAPP_TME (https://t.me/бот/short_name) на сервере бота — тогда день откроется в Mini App.",
+      { show_alert: true }
+    );
     return;
   }
 
-  const quizKb =
-    d.taskKind === "QUIZ" && d.quizOptions?.length
-      ? (() => {
-          const keys = d.quizOptions.map((_, i) =>
-            Markup.button.callback(`Вариант ${i + 1}`, `quiz:${day}:${i}`)
-          );
-          const rows: ReturnType<typeof Markup.button.callback>[][] = [];
-          for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
-          return Markup.inlineKeyboard(rows);
-        })()
-      : Markup.inlineKeyboard([[Markup.button.callback("Подтверждаю", `conf:${day}`)]]);
-
-  if (testPhotoUrl && text.length <= captionMax) {
-    await ctx.replyWithPhoto(testPhotoUrl, {
-      caption: text,
-      parse_mode: "Markdown",
-      ...quizKb,
-    });
-  } else if (testPhotoUrl) {
-    await ctx.replyWithPhoto(testPhotoUrl, {
-      caption: "Иллюстрация к тесту",
-    });
-    await ctx.reply(text, {
-      parse_mode: "Markdown",
-      ...quizKb,
-    });
-  } else {
-    await ctx.reply(text, {
-      parse_mode: "Markdown",
-      ...quizKb,
-    });
-  }
+  await ctx.answerCbQuery();
+  await replyLegacyAdventDay(ctx, d, day);
 });
 
 bot.action(/quiz:(\d+):(\d+)/, async (ctx) => {

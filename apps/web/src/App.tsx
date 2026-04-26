@@ -67,6 +67,7 @@ export function App() {
   }
 
   const bot = site.cta_bot ?? "#";
+  const telegramMiniApp = site.cta_telegram_miniapp?.trim() ?? "";
   const title = site.hero_title ?? "Резонанс";
   const sub = site.hero_sub ?? "";
 
@@ -123,7 +124,7 @@ export function App() {
 
       {err ? <p className="section-title alert">{err}</p> : null}
 
-      <AdventCalendar />
+      <AdventCalendar botUrl={bot} telegramMiniAppBase={telegramMiniApp} />
 
       <h2 className="section-title" id="features">
         Что внутри

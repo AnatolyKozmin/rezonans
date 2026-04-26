@@ -32,7 +32,13 @@ function mapMedia(m: { id: string; kind: string; filename: string; caption: stri
 publicRouter.get("/advent", async (_req, res) => {
   const rows = await prisma.adventDay.findMany({
     orderBy: { day: "asc" },
-    include: { media: { orderBy: { position: "asc" } } },
+    include: {
+      media: { orderBy: { position: "asc" } },
+      questions: {
+        orderBy: { position: "asc" },
+        select: { id: true, prompt: true, kind: true },
+      },
+    },
   });
   const current = currentAdventDayNumber();
   const days = rows.map((d) => {
@@ -41,12 +47,18 @@ publicRouter.get("/advent", async (_req, res) => {
       quizOptions: qRaw,
       media,
       testImageFilename: tif,
+      questions,
       ...rest
     } = d;
     return {
       ...rest,
       quizOptions: qRaw ? JSON.parse(qRaw) : null,
       testImageUrl: tif ? `/uploads/${tif}` : null,
+      miniQuiz: questions.map((q) => ({
+        id: q.id,
+        prompt: q.prompt,
+        kind: q.kind,
+      })),
       unlocked: isAdventDayUnlocked(d.day),
       media: media.map(mapMedia),
     };

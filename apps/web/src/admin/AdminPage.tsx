@@ -11,6 +11,16 @@ type MediaRow = {
   position: number;
 };
 
+type QuestionRow = {
+  id: string;
+  position: number;
+  prompt: string;
+  kind: string;
+  optionsJson: string | null;
+  textAnswersJson: string | null;
+  imageFilename: string | null;
+};
+
 type DayRow = {
   day: number;
   title: string;
@@ -24,8 +34,51 @@ type DayRow = {
   quizOptions: string | null;
   correctIndex: number | null;
   testImageFilename: string | null;
+  questions?: QuestionRow[];
   media: MediaRow[];
 };
+
+type QKind = "SINGLE" | "MULTI" | "TEXT" | "IMAGE";
+
+type QuestionDraft = {
+  key: string;
+  prompt: string;
+  kind: QKind;
+  options: { text: string; correct: boolean }[];
+  textAnswersLines: string;
+};
+
+function defaultOptions(kind: QKind): { text: string; correct: boolean }[] {
+  if (kind === "SINGLE") {
+    return [
+      { text: "", correct: true },
+      { text: "", correct: false },
+    ];
+  }
+  if (kind === "MULTI") {
+    return [
+      { text: "", correct: true },
+      { text: "", correct: false },
+      { text: "", correct: false },
+    ];
+  }
+  return [];
+}
+
+function draftsFromApi(rows: QuestionRow[] | undefined): QuestionDraft[] {
+  if (!rows?.length) return [];
+  return rows.map((q) => ({
+    key: q.id,
+    prompt: q.prompt,
+    kind: q.kind as QKind,
+    options: q.optionsJson
+      ? (JSON.parse(q.optionsJson) as { text: string; correct: boolean }[])
+      : defaultOptions(q.kind as QKind),
+    textAnswersLines: q.textAnswersJson
+      ? (JSON.parse(q.textAnswersJson) as string[]).join("\n")
+      : "",
+  }));
+}
 
 export function AdminPage() {
   const [key, setKey] = useState(readStoredAdminKey);
@@ -48,10 +101,9 @@ export function AdminPage() {
     articleUrl: "",
     videoUrl: "",
     taskPrompt: "",
-    taskKind: "CONFIRM" as "QUIZ" | "CONFIRM",
-    quizOptionsText: "[\n  \"Вариант 1\",\n  \"Вариант 2\"\n]",
-    correctIndex: 0,
   });
+  const [questionDrafts, setQuestionDrafts] = useState<QuestionDraft[]>([]);
+  const [savingQuestions, setSavingQuestions] = useState(false);
 
   const authHeaders = useCallback(
     (): HeadersInit => ({
@@ -103,13 +155,6 @@ export function AdminPage() {
 
   useEffect(() => {
     if (current) {
-      let q: unknown = [];
-      try {
-        q = current.quizOptions ? JSON.parse(current.quizOptions) : [];
-      } catch {
-        q = [];
-      }
-      const arr = Array.isArray(q) ? q.map(String) : [];
       setForm({
         title: current.title,
         shortSummary: current.shortSummary,
@@ -118,10 +163,8 @@ export function AdminPage() {
         articleUrl: current.articleUrl ?? "",
         videoUrl: current.videoUrl ?? "",
         taskPrompt: current.taskPrompt ?? "",
-        taskKind: current.taskKind === "QUIZ" ? "QUIZ" : "CONFIRM",
-        quizOptionsText: JSON.stringify(arr.length ? arr : ["Вариант 1", "Вариант 2"], null, 2),
-        correctIndex: current.correctIndex ?? 0,
       });
+      setQuestionDrafts(draftsFromApi(current.questions));
       return;
     }
     if (days === null) return;
@@ -133,28 +176,13 @@ export function AdminPage() {
       articleUrl: "",
       videoUrl: "",
       taskPrompt: "",
-      taskKind: "CONFIRM",
-      quizOptionsText: "[\n  \"Вариант 1\",\n  \"Вариант 2\"\n]",
-      correctIndex: 0,
     });
+    setQuestionDrafts([]);
   }, [current, selected, days]);
 
   const saveDay = async () => {
     if (!savedKey) return;
     setErr(null);
-    let quizOptions: string[] | null = null;
-    let correctIndex: number | null = null;
-    if (form.taskKind === "QUIZ") {
-      try {
-        const parsed = JSON.parse(form.quizOptionsText || "[]");
-        if (!Array.isArray(parsed)) throw new Error("not array");
-        quizOptions = parsed.map((x) => String(x));
-      } catch {
-        setErr('В поле вариантов квиза нужен JSON-массив строк, например ["Да","Нет","Не знаю"].');
-        return;
-      }
-      correctIndex = form.correctIndex;
-    }
     try {
       const r = await fetch(`/api/admin/advent/days/${dayForApi}`, {
         method: "PUT",
@@ -167,15 +195,82 @@ export function AdminPage() {
           articleUrl: form.articleUrl || null,
           videoUrl: form.videoUrl || null,
           taskPrompt: form.taskPrompt,
-          taskKind: form.taskKind,
-          quizOptions: form.taskKind === "QUIZ" ? quizOptions : null,
-          correctIndex: form.taskKind === "QUIZ" ? correctIndex : null,
         }),
       });
       if (!r.ok) throw new Error(await r.text());
       await loadDays();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Ошибка сохранения");
+    }
+  };
+
+  const saveQuestions = async () => {
+    if (!savedKey) return;
+    for (let i = 0; i < questionDrafts.length; i++) {
+      const d = questionDrafts[i]!;
+      if (!d.prompt.trim()) {
+        setErr(`Вопрос ${i + 1}: введите текст вопроса`);
+        return;
+      }
+      if (d.kind === "TEXT") {
+        const lines = d.textAnswersLines.split("\n").map((l) => l.trim()).filter(Boolean);
+        if (lines.length < 1) {
+          setErr(`Вопрос ${i + 1}: укажите эталонные ответы (каждый с новой строки)`);
+          return;
+        }
+      }
+      if (d.kind === "SINGLE" || d.kind === "MULTI") {
+        const opts = d.options.map((o) => o.text.trim()).filter(Boolean);
+        if (opts.length < 2) {
+          setErr(`Вопрос ${i + 1}: нужно минимум два непустых варианта`);
+          return;
+        }
+        const nCorrect = d.options.filter((o) => o.correct && o.text.trim()).length;
+        if (d.kind === "SINGLE" && nCorrect !== 1) {
+          setErr(`Вопрос ${i + 1}: отметьте ровно один верный вариант`);
+          return;
+        }
+        if (d.kind === "MULTI" && nCorrect < 1) {
+          setErr(`Вопрос ${i + 1}: отметьте хотя бы один верный вариант`);
+          return;
+        }
+      }
+    }
+
+    const payload = questionDrafts.map((d) => {
+      if (d.kind === "TEXT") {
+        return {
+          prompt: d.prompt.trim(),
+          kind: d.kind,
+          textAnswers: d.textAnswersLines.split("\n").map((l) => l.trim()).filter(Boolean),
+        };
+      }
+      if (d.kind === "IMAGE") {
+        return { prompt: d.prompt.trim(), kind: d.kind };
+      }
+      return {
+        prompt: d.prompt.trim(),
+        kind: d.kind,
+        options: d.options
+          .filter((o) => o.text.trim())
+          .map((o) => ({ text: o.text.trim(), correct: o.correct })),
+      };
+    });
+
+    setErr(null);
+    setSavingQuestions(true);
+    try {
+      const r = await fetch(`/api/admin/advent/days/${dayForApi}/questions`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ questions: payload }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      await loadDays();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Ошибка сохранения вопросов");
+    } finally {
+      setSavingQuestions(false);
     }
   };
 
@@ -392,7 +487,7 @@ export function AdminPage() {
               <section className="admin-section">
                 <h2>Тексты и ссылки (сайт)</h2>
                 <p className="admin-muted" style={{ marginTop: "-0.5rem" }}>
-                  Тип дня влияет на подписи в карточке адвента на сайте. Ниже — отдельно тест дня для сайта и бота.
+                  Тип дня влияет на подписи в карточке адвента на сайте. Тест с вопросами — в Telegram Mini App (см. блок ниже).
                 </p>
                 <label className="admin-label">
                   Заголовок
@@ -456,67 +551,24 @@ export function AdminPage() {
               </section>
 
               <section className="admin-section">
-                <h2>Тест дня</h2>
+                <h2>Тест дня (Mini App)</h2>
                 <p className="admin-muted" style={{ marginTop: "-0.5rem" }}>
-                  Текст и фото необязательны: блок на сайте показывается, если есть вопрос, картинка к тесту или варианты квиза. Ответ и зачёт — в боте.
+                  Вопросы проходят в Mini App в Telegram, зачёт дня — после всех верных ответов. Типы: один верный вариант, несколько верных, текст, фото-ответ.
+                  Если список вопросов пуст и вы сохраните его — теста нет (для такого дня останется подтверждение в боте без квиза).
                 </p>
                 <label className="admin-label">
-                  Текст теста / вопрос (необязательно)
+                  Вступительный текст на сайте (необязательно)
                   <textarea
                     className="admin-textarea"
-                    rows={3}
+                    rows={2}
                     value={form.taskPrompt}
                     onChange={(e) => setForm((f) => ({ ...f, taskPrompt: e.target.value }))}
-                    placeholder="Можно оставить пустым, если достаточно фото или только кнопки в боте"
+                    placeholder="Коротко о тесте — показывается на сайте над кнопкой в Telegram"
                   />
                 </label>
-                <label className="admin-label">
-                  Действие в боте
-                  <select
-                    className="admin-input"
-                    value={form.taskKind}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        taskKind: e.target.value as "QUIZ" | "CONFIRM",
-                      }))
-                    }
-                  >
-                    <option value="CONFIRM">Одна кнопка «Подтверждаю»</option>
-                    <option value="QUIZ">Квиз (кнопки с вариантами)</option>
-                  </select>
-                </label>
-                {form.taskKind === "QUIZ" ? (
-                  <>
-                    <label className="admin-label">
-                      Варианты (JSON-массив строк)
-                      <textarea
-                        className="admin-textarea"
-                        rows={6}
-                        value={form.quizOptionsText}
-                        onChange={(e) => setForm((f) => ({ ...f, quizOptionsText: e.target.value }))}
-                      />
-                    </label>
-                    <label className="admin-label">
-                      Верный вариант — индекс (0 = первый в списке)
-                      <input
-                        className="admin-input"
-                        type="number"
-                        min={0}
-                        value={form.correctIndex}
-                        onChange={(e) =>
-                          setForm((f) => ({
-                            ...f,
-                            correctIndex: Math.max(0, Number.parseInt(e.target.value, 10) || 0),
-                          }))
-                        }
-                      />
-                    </label>
-                  </>
-                ) : null}
                 <div className="admin-row" style={{ flexWrap: "wrap", alignItems: "flex-end", gap: "1rem" }}>
                   <label className="admin-label admin-file" style={{ marginBottom: 0 }}>
-                    Фото к тесту (необязательно)
+                    Иллюстрация к блоку теста на сайте (необязательно)
                     <input
                       type="file"
                       accept="image/*"
@@ -533,13 +585,13 @@ export function AdminPage() {
                       className="admin-btn admin-btn--primary"
                       onClick={() => void uploadTestImage(pendingTestImage)}
                     >
-                      Загрузить фото теста
+                      Загрузить
                     </button>
                   ) : null}
                 </div>
                 {pendingTestImage ? (
                   <p className="admin-muted" style={{ margin: "0.25rem 0 0" }}>
-                    Выбран файл: <span className="mono">{pendingTestImage.name}</span>
+                    Файл: <span className="mono">{pendingTestImage.name}</span>
                   </p>
                 ) : null}
                 {current?.testImageFilename ? (
@@ -548,18 +600,280 @@ export function AdminPage() {
                       className="admin-media-img"
                       src={`/uploads/${current.testImageFilename}`}
                       alt=""
-                      style={{ maxHeight: 220, borderRadius: 8 }}
+                      style={{ maxHeight: 160, borderRadius: 8 }}
                     />
                     <button type="button" className="admin-btn admin-btn--danger" onClick={() => void deleteTestImage()}>
-                      Убрать фото теста
+                      Убрать иллюстрацию
                     </button>
                   </div>
                 ) : null}
-                <p className="admin-muted" style={{ marginTop: "1rem" }}>
-                  Не забудьте сохранить текст и настройки квиза кнопкой ниже.
-                </p>
-                <button type="button" className="admin-btn admin-btn--primary" onClick={saveDay}>
-                  Сохранить день
+
+                <div style={{ marginTop: "1.25rem" }}>
+                  <div className="admin-row" style={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+                    <h3 className="admin-muted" style={{ margin: 0, fontSize: "1rem", fontWeight: 700 }}>
+                      Вопросы
+                    </h3>
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--ghost"
+                      onClick={() =>
+                        setQuestionDrafts((list) => [
+                          ...list,
+                          {
+                            key: crypto.randomUUID(),
+                            prompt: "",
+                            kind: "SINGLE",
+                            options: defaultOptions("SINGLE"),
+                            textAnswersLines: "",
+                          },
+                        ])
+                      }
+                    >
+                      + Добавить вопрос
+                    </button>
+                  </div>
+
+                  {questionDrafts.length === 0 ? (
+                    <p className="admin-muted" style={{ marginTop: "0.5rem" }}>
+                      Пока нет вопросов — добавьте или сохраните пустой список, чтобы убрать тест.
+                    </p>
+                  ) : null}
+
+                  <ul style={{ listStyle: "none", padding: 0, margin: "0.75rem 0 0" }}>
+                    {questionDrafts.map((qd, qi) => (
+                      <li
+                        key={qd.key}
+                        style={{
+                          border: "1px solid rgba(255,255,255,0.12)",
+                          borderRadius: 12,
+                          padding: "1rem",
+                          marginBottom: "0.75rem",
+                        }}
+                      >
+                        <div className="admin-row" style={{ flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                          <span className="admin-badge">#{qi + 1}</span>
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--ghost"
+                            disabled={qi === 0}
+                            onClick={() =>
+                              setQuestionDrafts((list) => {
+                                const next = [...list];
+                                [next[qi - 1], next[qi]] = [next[qi]!, next[qi - 1]!];
+                                return next;
+                              })
+                            }
+                          >
+                            Вверх
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--ghost"
+                            disabled={qi >= questionDrafts.length - 1}
+                            onClick={() =>
+                              setQuestionDrafts((list) => {
+                                const next = [...list];
+                                [next[qi], next[qi + 1]] = [next[qi + 1]!, next[qi]!];
+                                return next;
+                              })
+                            }
+                          >
+                            Вниз
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--danger"
+                            onClick={() => setQuestionDrafts((list) => list.filter((_, i) => i !== qi))}
+                          >
+                            Удалить вопрос
+                          </button>
+                        </div>
+                        <label className="admin-label">
+                          Текст вопроса
+                          <textarea
+                            className="admin-textarea"
+                            rows={2}
+                            value={qd.prompt}
+                            onChange={(e) =>
+                              setQuestionDrafts((list) =>
+                                list.map((x, i) => (i === qi ? { ...x, prompt: e.target.value } : x))
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="admin-label">
+                          Тип ответа
+                          <select
+                            className="admin-input"
+                            value={qd.kind}
+                            onChange={(e) => {
+                              const kind = e.target.value as QKind;
+                              setQuestionDrafts((list) =>
+                                list.map((x, i) =>
+                                  i === qi
+                                    ? {
+                                        ...x,
+                                        kind,
+                                        options: kind === "SINGLE" || kind === "MULTI" ? defaultOptions(kind) : [],
+                                        textAnswersLines: kind === "TEXT" ? x.textAnswersLines : "",
+                                      }
+                                    : x
+                                )
+                              );
+                            }}
+                          >
+                            <option value="SINGLE">Один правильный вариант</option>
+                            <option value="MULTI">Несколько правильных</option>
+                            <option value="TEXT">Текст в поле ввода</option>
+                            <option value="IMAGE">Ответ картинкой</option>
+                          </select>
+                        </label>
+
+                        {qd.kind === "SINGLE" || qd.kind === "MULTI" ? (
+                          <div style={{ marginTop: "0.5rem" }}>
+                            <p className="admin-muted" style={{ margin: "0 0 0.5rem" }}>
+                              Варианты {qd.kind === "SINGLE" ? "(верный один)" : "(отметьте все верные)"}
+                            </p>
+                            {qd.options.map((opt, oi) => (
+                              <div key={oi} className="admin-row" style={{ alignItems: "center", gap: "0.5rem", marginBottom: "0.35rem" }}>
+                                {qd.kind === "SINGLE" ? (
+                                  <input
+                                    type="radio"
+                                    name={`correct-${qd.key}`}
+                                    checked={opt.correct}
+                                    onChange={() =>
+                                      setQuestionDrafts((list) =>
+                                        list.map((x, i) =>
+                                          i === qi
+                                            ? {
+                                                ...x,
+                                                options: x.options.map((o, j) => ({
+                                                  ...o,
+                                                  correct: j === oi,
+                                                })),
+                                              }
+                                            : x
+                                        )
+                                      )
+                                    }
+                                    aria-label="верный"
+                                  />
+                                ) : (
+                                  <input
+                                    type="checkbox"
+                                    checked={opt.correct}
+                                    onChange={(e) =>
+                                      setQuestionDrafts((list) =>
+                                        list.map((x, i) =>
+                                          i === qi
+                                            ? {
+                                                ...x,
+                                                options: x.options.map((o, j) =>
+                                                  j === oi ? { ...o, correct: e.target.checked } : o
+                                                ),
+                                              }
+                                            : x
+                                        )
+                                      )
+                                    }
+                                    aria-label="верный"
+                                  />
+                                )}
+                                <input
+                                  className="admin-input"
+                                  style={{ flex: 1 }}
+                                  value={opt.text}
+                                  placeholder={`Вариант ${oi + 1}`}
+                                  onChange={(e) =>
+                                    setQuestionDrafts((list) =>
+                                      list.map((x, i) =>
+                                        i === qi
+                                          ? {
+                                              ...x,
+                                              options: x.options.map((o, j) =>
+                                                j === oi ? { ...o, text: e.target.value } : o
+                                              ),
+                                            }
+                                          : x
+                                      )
+                                    )
+                                  }
+                                />
+                                <button
+                                  type="button"
+                                  className="admin-btn admin-btn--ghost"
+                                  disabled={qd.options.length <= 2}
+                                  onClick={() =>
+                                    setQuestionDrafts((list) =>
+                                      list.map((x, i) =>
+                                        i === qi
+                                          ? { ...x, options: x.options.filter((_, j) => j !== oi) }
+                                          : x
+                                      )
+                                    )
+                                  }
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn--ghost"
+                              style={{ marginTop: "0.25rem" }}
+                              onClick={() =>
+                                setQuestionDrafts((list) =>
+                                  list.map((x, i) =>
+                                    i === qi
+                                      ? {
+                                          ...x,
+                                          options: [...x.options, { text: "", correct: false }],
+                                        }
+                                      : x
+                                  )
+                                )
+                              }
+                            >
+                              + вариант
+                            </button>
+                          </div>
+                        ) : null}
+
+                        {qd.kind === "TEXT" ? (
+                          <label className="admin-label">
+                            Допустимые ответы (каждый с новой строки, без учёта регистра)
+                            <textarea
+                              className="admin-textarea"
+                              rows={4}
+                              value={qd.textAnswersLines}
+                              onChange={(e) =>
+                                setQuestionDrafts((list) =>
+                                  list.map((x, i) => (i === qi ? { ...x, textAnswersLines: e.target.value } : x))
+                                )
+                              }
+                              placeholder={"Да\nОк\nСогласен"}
+                            />
+                          </label>
+                        ) : null}
+
+                        {qd.kind === "IMAGE" ? (
+                          <p className="admin-muted" style={{ margin: "0.5rem 0 0" }}>
+                            Участник загружает снимок в Mini App; верным считается любой загруженный файл.
+                          </p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--primary"
+                  style={{ marginTop: "0.75rem" }}
+                  disabled={savingQuestions}
+                  onClick={() => void saveQuestions()}
+                >
+                  {savingQuestions ? "Сохранение вопросов…" : "Сохранить вопросы"}
                 </button>
               </section>
 

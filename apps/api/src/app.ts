@@ -8,6 +8,7 @@ import { adminRouter } from "./routes/admin.js";
 import { adminAdventRouter } from "./routes/adminAdvent.js";
 import { adminSiteRouter } from "./routes/adminSite.js";
 import { internalRouter } from "./routes/internal.js";
+import { miniAdventRouter } from "./routes/miniAdvent.js";
 
 export function createApp() {
   const app = express();
@@ -18,12 +19,12 @@ export function createApp() {
 
   app.get("/health", (_req, res) => res.json({ ok: true }));
 
+  app.use("/api/mini", miniAdventRouter);
   app.use("/api", publicRouter);
   app.use("/api/users", usersRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/admin/advent", adminAdventRouter);
   app.use("/api/admin/site", adminSiteRouter);
   app.use("/api/internal", internalRouter);
-
   return app;
 }

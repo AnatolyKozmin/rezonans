@@ -8,6 +8,8 @@ export type AdventMediaPublic = {
   position: number;
 };
 
+export type MiniQuizPreview = { id: string; prompt: string; kind: string };
+
 export type AdventDayPublic = {
   day: number;
   title: string;
@@ -20,6 +22,7 @@ export type AdventDayPublic = {
   taskKind?: string;
   quizOptions?: string[] | null;
   testImageUrl?: string | null;
+  miniQuiz?: MiniQuizPreview[];
   unlocked: boolean;
   media?: AdventMediaPublic[];
 };
@@ -34,10 +37,59 @@ function sortAdventMedia(media: AdventMediaPublic[]) {
 }
 
 function hasPublicTestBlock(d: AdventDayPublic): boolean {
+  if (d.miniQuiz && d.miniQuiz.length > 0) return true;
   if (d.testImageUrl) return true;
   if (d.taskPrompt?.trim()) return true;
-  if (d.taskKind === "QUIZ" && d.quizOptions && d.quizOptions.length > 0) return true;
   return false;
+}
+
+/** Ссылка на бота с deep-link дня для t.me; иначе — общий URL или якорь на CTA. */
+function adventTestBotHref(botUrl: string, day: number): string {
+  const fallback = "#hero-cta";
+  const raw = botUrl.trim();
+  if (!raw || raw === "#") return fallback;
+
+  let href = raw;
+  if (/^t\.me\//i.test(href)) href = `https://${href}`;
+
+  if (!/^https?:\/\//i.test(href)) {
+    return fallback;
+  }
+
+  try {
+    const u = new URL(href);
+    const host = u.hostname.toLowerCase();
+    if (host === "t.me" || host === "telegram.me" || host.endsWith(".t.me")) {
+      u.searchParams.set("start", `advent_${day}`);
+      return u.toString();
+    }
+  } catch {
+    return fallback;
+  }
+
+  return href;
+}
+
+/** Только Mini App в Telegram (квиз не открываем через чат бота). */
+function adventTestTelegramMiniHref(miniAppBase: string, day: number): string {
+  const raw = miniAppBase.trim();
+  if (!raw) return "#advent-miniapp-missing";
+  let href = raw;
+  if (/^t\.me\//i.test(href)) href = `https://${href}`;
+  try {
+    const u = new URL(href);
+    const host = u.hostname.toLowerCase();
+    if (host === "t.me" || host === "telegram.me" || host.endsWith(".t.me")) {
+      const parts = u.pathname.split("/").filter(Boolean);
+      if (parts.length >= 2) {
+        u.searchParams.set("startapp", String(day));
+        return u.toString();
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return "#advent-miniapp-missing";
 }
 
 function AdventMediaSlide({ m }: { m: AdventMediaPublic }) {
@@ -142,7 +194,14 @@ function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; da
   );
 }
 
-export function AdventCalendar() {
+export function AdventCalendar({
+  botUrl = "#",
+  telegramMiniAppBase = "",
+}: {
+  botUrl?: string;
+  /** https://t.me/bot_username/webapp_short_name — задаётся в админке /admin/site или SiteContent cta_telegram_miniapp */
+  telegramMiniAppBase?: string;
+} = {}) {
   const [payload, setPayload] = useState<AdventPayload | null>(null);
   const [selected, setSelected] = useState(1);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -206,8 +265,8 @@ export function AdventCalendar() {
         Адвент-календарь
       </h2>
       <p className="advent-lead">
-        Каждый день открывается по дате кампании. Листайте ленту и нажимайте на карточку — сверху материал дня. Задание и прогресс — в{" "}
-        <a href="#hero-cta">Telegram-боте</a>.
+        Каждый день открывается по дате кампании. Листайте ленту и нажимайте на карточку — сверху материал дня. Тест — кнопка{" "}
+        <strong>Пройти тест</strong> ниже; открывается в приложении Telegram (Mini App).
       </p>
 
       {loadError ? <p className="alert">{loadError}</p> : null}
@@ -264,14 +323,47 @@ export function AdventCalendar() {
                       {active.taskPrompt?.trim() ? (
                         <p className="advent-test-prompt">{active.taskPrompt}</p>
                       ) : null}
-                      {active.taskKind === "QUIZ" && active.quizOptions && active.quizOptions.length > 0 ? (
+                      {active.miniQuiz && active.miniQuiz.length > 0 ? (
                         <ol className="advent-quiz-options">
-                          {active.quizOptions.map((opt, i) => (
-                            <li key={i}>{opt}</li>
+                          {active.miniQuiz.map((q) => (
+                            <li key={q.id}>{q.prompt}</li>
                           ))}
                         </ol>
                       ) : null}
-                      <p className="advent-task-note">Ответ и зачёт — в Telegram-боте.</p>
+                      {(() => {
+                        const testHref =
+                          active.miniQuiz && active.miniQuiz.length > 0
+                            ? adventTestTelegramMiniHref(telegramMiniAppBase, active.day)
+                            : adventTestBotHref(botUrl, active.day);
+                        const hrefMissing = testHref.startsWith("#");
+                        return (
+                          <>
+                            {hrefMissing ? (
+                              <p className="alert advent-test-config-miss">
+                                Ссылка на Telegram не задана: кнопка не откроет бота. Укажите «Ссылка на бота» в{" "}
+                                <a href="/admin/site">админке → сайт</a> (и при квизе — прямую ссылку Mini App).
+                              </p>
+                            ) : null}
+                            <a
+                              className="btn btn-primary advent-test-bot-btn"
+                              href={testHref}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Пройти тест
+                            </a>
+                            <p className="advent-task-note">
+                              {hrefMissing
+                                ? "После настройки ссылок перезагрузите страницу."
+                                : active.miniQuiz && active.miniQuiz.length > 0
+                                  ? telegramMiniAppBase.trim()
+                                    ? "Открывается только Mini App в Telegram (материал дня и тест внутри)."
+                                    : "Укажите прямую ссылку Mini App в админке — квиз не идёт через чат бота."
+                                  : "Ссылка откроет бота для зачёта дня без квиза."}
+                            </p>
+                          </>
+                        );
+                      })()}
                     </div>
                   ) : null}
                 </>

@@ -17,10 +17,7 @@ const PutDaySite = z.object({
   articleUrl: z.string().nullable().optional(),
   videoUrl: z.string().nullable().optional(),
   extraText: z.string().nullable().optional(),
-  taskPrompt: z.string(),
-  taskKind: z.enum(["QUIZ", "CONFIRM"]),
-  quizOptions: z.array(z.string()).optional().nullable(),
-  correctIndex: z.number().int().min(0).optional().nullable(),
+  taskPrompt: z.string().optional(),
 });
 
 function defaultAdventDay(day: number) {
@@ -39,9 +36,6 @@ function defaultAdventDay(day: number) {
 }
 
 function adventDayPayloadFromSite(d: z.infer<typeof PutDaySite>) {
-  const quizOptions =
-    d.taskKind === "QUIZ" ? JSON.stringify(d.quizOptions ?? []) : null;
-  const correctIndex = d.taskKind === "QUIZ" ? (d.correctIndex ?? 0) : null;
   return {
     title: d.title,
     materialType: d.materialType,
@@ -49,12 +43,65 @@ function adventDayPayloadFromSite(d: z.infer<typeof PutDaySite>) {
     articleUrl: d.articleUrl ?? null,
     videoUrl: d.videoUrl ?? null,
     extraText: d.extraText ?? null,
-    taskPrompt: d.taskPrompt,
-    taskKind: d.taskKind,
-    quizOptions,
-    correctIndex,
+    taskPrompt: d.taskPrompt ?? "",
+    taskKind: "CONFIRM",
+    quizOptions: null,
+    correctIndex: null,
   };
 }
+
+const QuestionIn = z.object({
+  prompt: z.string().min(1),
+  kind: z.enum(["SINGLE", "MULTI", "TEXT", "IMAGE"]),
+  options: z
+    .array(z.object({ text: z.string().min(1), correct: z.boolean() }))
+    .optional(),
+  textAnswers: z.array(z.string()).optional(),
+});
+
+const PutQuestionsBody = z
+  .object({
+    questions: z.array(QuestionIn),
+  })
+  .superRefine((data, ctx) => {
+    data.questions.forEach((q, i) => {
+      if (q.kind === "SINGLE" || q.kind === "MULTI") {
+        const opts = q.options ?? [];
+        if (opts.length < 2) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Нужно минимум 2 варианта",
+            path: ["questions", i, "options"],
+          });
+        }
+        const correctN = opts.filter((o) => o.correct).length;
+        if (q.kind === "SINGLE" && correctN !== 1) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Один вариант должен быть отмечен как верный",
+            path: ["questions", i],
+          });
+        }
+        if (q.kind === "MULTI" && correctN < 1) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Отметьте хотя бы один верный вариант",
+            path: ["questions", i],
+          });
+        }
+      }
+      if (q.kind === "TEXT") {
+        const ta = (q.textAnswers ?? []).map((t) => t.trim()).filter(Boolean);
+        if (ta.length < 1) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Укажите эталонные ответы (минимум один)",
+            path: ["questions", i, "textAnswers"],
+          });
+        }
+      }
+    });
+  });
 
 function unlinkUploadRel(rel: string | null | undefined) {
   if (!rel) return;
@@ -73,7 +120,10 @@ const Kind = z.enum(["IMAGE", "IMAGE_TEXT", "VIDEO"]);
 adminAdventRouter.get("/days", async (_req, res) => {
   const days = await prisma.adventDay.findMany({
     orderBy: { day: "asc" },
-    include: { media: { orderBy: { position: "asc" } } },
+    include: {
+      media: { orderBy: { position: "asc" } },
+      questions: { orderBy: { position: "asc" } },
+    },
   });
   res.json(days);
 });
@@ -86,7 +136,10 @@ adminAdventRouter.get("/days/:day", async (req, res) => {
   }
   const row = await prisma.adventDay.findUnique({
     where: { day },
-    include: { media: { orderBy: { position: "asc" } } },
+    include: {
+      media: { orderBy: { position: "asc" } },
+      questions: { orderBy: { position: "asc" } },
+    },
   });
   if (!row) {
     res.status(404).json({ error: "not found" });
@@ -111,7 +164,66 @@ adminAdventRouter.put("/days/:day", async (req, res) => {
     where: { day },
     create: { day, ...data },
     update: data,
-    include: { media: { orderBy: { position: "asc" } } },
+    include: {
+      media: { orderBy: { position: "asc" } },
+      questions: { orderBy: { position: "asc" } },
+    },
+  });
+  res.json(row);
+});
+
+adminAdventRouter.put("/days/:day/questions", async (req, res) => {
+  const day = Number(req.params.day);
+  if (!Number.isInteger(day) || day < 1 || day > 21) {
+    res.status(400).json({ error: "invalid day" });
+    return;
+  }
+  const body = PutQuestionsBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.flatten() });
+    return;
+  }
+
+  await prisma.adventDay.upsert({
+    where: { day },
+    create: { day, ...defaultAdventDay(day) },
+    update: {},
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.adventQuestion.deleteMany({ where: { day } });
+    for (let i = 0; i < body.data.questions.length; i++) {
+      const q = body.data.questions[i];
+      await tx.adventQuestion.create({
+        data: {
+          day,
+          position: i,
+          prompt: q.prompt,
+          kind: q.kind,
+          optionsJson:
+            q.kind === "SINGLE" || q.kind === "MULTI"
+              ? JSON.stringify(q.options ?? [])
+              : null,
+          textAnswersJson:
+            q.kind === "TEXT"
+              ? JSON.stringify(
+                  (q.textAnswers ?? [])
+                    .map((t) => t.trim())
+                    .filter(Boolean)
+                )
+              : null,
+          imageFilename: null,
+        },
+      });
+    }
+  });
+
+  const row = await prisma.adventDay.findUnique({
+    where: { day },
+    include: {
+      media: { orderBy: { position: "asc" } },
+      questions: { orderBy: { position: "asc" } },
+    },
   });
   res.json(row);
 });
@@ -275,7 +387,10 @@ adminAdventRouter.post(
       where: { day },
       create: { day, ...defaultAdventDay(day), testImageFilename: rel },
       update: { testImageFilename: rel },
-      include: { media: { orderBy: { position: "asc" } } },
+      include: {
+        media: { orderBy: { position: "asc" } },
+        questions: { orderBy: { position: "asc" } },
+      },
     });
     res.json(updated);
   }
@@ -296,7 +411,10 @@ adminAdventRouter.delete("/days/:day/test-image", async (req, res) => {
   const updated = await prisma.adventDay.update({
     where: { day },
     data: { testImageFilename: null },
-    include: { media: { orderBy: { position: "asc" } } },
+    include: {
+      media: { orderBy: { position: "asc" } },
+      questions: { orderBy: { position: "asc" } },
+    },
   });
   res.json(updated);
 });
