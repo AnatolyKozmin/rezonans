@@ -8,14 +8,20 @@ datasource db {
 }
 
 model User {
-  id               String   @id @default(cuid())
-  telegramId       String   @unique
+  id               String    @id @default(cuid())
+  telegramId       String    @unique
   username         String?
   firstName        String?
   lastName         String?
-  createdAt        DateTime @default(now())
-  lastActivityAt   DateTime @default(now())
-  reminderMuted    Boolean  @default(false)
+  createdAt        DateTime  @default(now())
+  lastActivityAt   DateTime  @default(now())
+  reminderMuted    Boolean   @default(false)
+
+  /// Онбординг: согласие с обработкой персональных данных
+  pdConsentAt      DateTime?
+  fullName         String?
+  age              Int?
+  university       String?
 
   adventProgress   AdventProgress[]
   trainingSignups  TrainingSignup[]
@@ -123,12 +129,14 @@ model TrainingSignup {
 
 /// Розыгрыш 1..5: привязка к «неделе» кампании (1→дни 1-7, 2→8-14, 3→15-21)
 model Giveaway {
-  id             Int      @id
-  title          String
-  campaignWeek   Int      // 1 | 2 | 3
-  minDaysInWeek  Int      // 3 | 4 | 5
-  scheduledAt    DateTime?
-  winnersPicked  Boolean  @default(false)
+  id               Int      @id
+  title            String
+  campaignWeek     Int      // 1 | 2 | 3
+  minDaysInWeek    Int      // 3 | 4 | 5
+  scheduledAt      DateTime?
+  winnersPicked    Boolean  @default(false)
+  winnerTelegramId String?
+  winnerName       String?
 
   entries GiveawayEntry[]
 }
@@ -144,6 +152,25 @@ model GiveawayEntry {
 
   @@unique([userId, giveawayId])
   @@index([userId])
+}
+
+/// Администраторы бота (могут делать рассылки и розыгрыши)
+model BotAdmin {
+  id         String   @id @default(cuid())
+  telegramId String   @unique
+  name       String   @default("")
+  addedAt    DateTime @default(now())
+}
+
+/// Рассылки через бот
+model Broadcast {
+  id        String    @id @default(cuid())
+  message   String
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+  sentCount Int       @default(0)
+  /// PENDING | SENT | CANCELLED
+  status    String    @default("PENDING")
 }
 
 model SiteContent {

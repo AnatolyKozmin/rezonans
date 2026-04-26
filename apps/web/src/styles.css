@@ -1647,14 +1647,127 @@ a:hover {
   backdrop-filter: blur(12px);
 }
 
-.admin-section h2 {
+.admin-section-title {
   font-family: var(--font-display);
   font-size: 0.95rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  margin: 0 0 1rem;
+  margin: 0 0 0.4rem;
   color: var(--accent-lime);
 }
+
+.admin-section-subtitle {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-soft);
+  margin: 1.5rem 0 0.6rem;
+}
+
+.admin-hint {
+  font-size: 0.85rem;
+  color: var(--text-soft);
+  margin: 0 0 1rem;
+  line-height: 1.5;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.admin-tab-btn {
+  padding: 0.45rem 1rem;
+  border-radius: 20px;
+  border: 1px solid var(--stroke);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-tab-btn.is-active,
+.admin-tab-btn:hover {
+  background: rgba(184, 255, 0, 0.12);
+  border-color: rgba(184, 255, 0, 0.35);
+  color: var(--accent-lime);
+}
+
+.admin-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  align-items: center;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin-top: 0.75rem;
+}
+
+.admin-table th {
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-soft);
+  border-bottom: 1px solid var(--stroke);
+}
+
+.admin-table td {
+  padding: 0.6rem 0.6rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  color: var(--text);
+  vertical-align: middle;
+}
+
+.admin-table .muted {
+  color: var(--text-soft);
+  text-align: center;
+  padding: 1.5rem;
+}
+
+.broadcast-msg-cell {
+  max-width: 300px;
+  word-break: break-word;
+}
+
+.winner-badge {
+  color: #ffd700;
+  font-weight: 700;
+}
+
+.winner-badge small {
+  font-size: 0.78rem;
+  opacity: 0.75;
+  font-weight: 400;
+}
+
+.btn-sm {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+.btn-danger {
+  background: rgba(220, 50, 50, 0.15);
+  border-color: rgba(220, 50, 50, 0.4);
+  color: #ff7070;
+}
+
+.btn-danger:hover {
+  background: rgba(220, 50, 50, 0.3);
+}
+
+
 
 .admin-label {
   display: flex;

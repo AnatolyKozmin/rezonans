@@ -37,3 +37,24 @@ internalRouter.get("/reminder-batch", async (_req, res) => {
   }
   res.json({ day: current, telegramIds });
 });
+
+/** Бот берёт первую PENDING-рассылку, помечает SENT и получает список telegramId */
+internalRouter.get("/pending-broadcast", async (_req, res) => {
+  const broadcast = await prisma.broadcast.findFirst({
+    where: { status: "PENDING" },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!broadcast) { res.json({ broadcast: null }); return; }
+
+  const users = await prisma.user.findMany({
+    select: { telegramId: true },
+  });
+  const telegramIds = users.map((u) => u.telegramId);
+
+  await prisma.broadcast.update({
+    where: { id: broadcast.id },
+    data: { status: "SENT", sentAt: new Date(), sentCount: telegramIds.length },
+  });
+
+  res.json({ broadcast: { id: broadcast.id, message: broadcast.message }, telegramIds });
+});

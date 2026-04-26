@@ -22,7 +22,16 @@ export const api = {
     firstName?: string;
     lastName?: string;
   }) {
-    return j(`/api/users/upsert`, { method: "POST", body: JSON.stringify(p) });
+    return j<{
+      telegramId: string;
+      pdConsentAt: string | null;
+      fullName: string | null;
+      age: number | null;
+      university: string | null;
+    }>(`/api/users/upsert`, { method: "POST", body: JSON.stringify(p) });
+  },
+  updateProfile(telegramId: string, p: { pdConsent?: boolean; fullName?: string; age?: number; university?: string }) {
+    return j(`/api/users/${telegramId}/profile`, { method: "PATCH", body: JSON.stringify(p) });
   },
   advent(telegramId: string) {
     return j(`/api/users/${telegramId}/advent`);

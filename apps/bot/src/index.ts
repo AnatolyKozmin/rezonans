@@ -6,22 +6,67 @@ import { api } from "./api.js";
 const bot = new Telegraf(botConfig.token);
 
 const mainKb = Markup.keyboard([
-  ["🎄 Адвент", "🏋️ Тренировки"],
   ["❓ Вопрос-ответ", "🛟 Поддержка"],
-  ["🎁 Розыгрыши", "📍 Как добраться"],
-  ["🌐 Сайт", "🔕 Без напоминаний"],
+  ["📱 Мини-апп", "📍 Маршрут до места"],
 ]).resize();
+
+// ─── Онбординг: состояние ожидания ввода ─────────────────────────────────────
+type OnboardStep = "name" | "age" | "university";
+const waitingFor = new Map<string, OnboardStep>();
+
+async function isBotAdmin(telegramId: string): Promise<boolean> {
+  const r = await fetch(`${botConfig.apiBase}/api/admin/bot/admins`, {
+    headers: { "x-admin-key": botConfig.adminKey },
+  });
+  if (!r.ok) return false;
+  const admins = await r.json() as { telegramId: string }[];
+  return admins.some((a) => a.telegramId === telegramId);
+}
 
 async function ensureUser(ctx: { from?: { id: number; username?: string; first_name?: string; last_name?: string } }) {
   const f = ctx.from;
   if (!f) throw new Error("no user");
-  await api.upsertUser({
+  const u = await api.upsertUser({
     telegramId: String(f.id),
     username: f.username,
     firstName: f.first_name,
     lastName: f.last_name,
   });
-  return String(f.id);
+  return { tid: String(f.id), profile: u };
+}
+
+async function askConsent(ctx: Context) {
+  await ctx.reply(
+    "👋 Привет! Прежде чем начать — нам нужно твоё согласие на обработку персональных данных.\n\n" +
+      "Мы сохраним твои ФИО, возраст и ВУЗ для организации кампании «Резонанс». " +
+      "Данные используются только внутри проекта и не передаются третьим лицам.",
+    Markup.inlineKeyboard([[Markup.button.callback("✅ Да, согласен(на)", "pd_consent")]])
+  );
+}
+
+async function askName(ctx: Context, tid: string) {
+  waitingFor.set(tid, "name");
+  await ctx.reply("Отлично! Теперь введи своё *ФИО* (Фамилия Имя Отчество):", {
+    parse_mode: "Markdown",
+    ...Markup.removeKeyboard(),
+  });
+}
+
+async function askAge(ctx: Context, tid: string) {
+  waitingFor.set(tid, "age");
+  await ctx.reply("Сколько тебе лет?");
+}
+
+async function askUniversity(ctx: Context, tid: string) {
+  waitingFor.set(tid, "university");
+  await ctx.reply("В каком ВУЗе ты учишься или работаешь?");
+}
+
+async function finishOnboarding(ctx: Context) {
+  await ctx.reply(
+    "✅ Всё готово! Добро пожаловать в кампанию «Резонанс» 🎉\n\nВот главное меню:",
+    mainKb
+  );
 }
 
 /** Прямая ссылка Mini App: https://t.me/bot/short?startapp=day */
@@ -136,17 +181,77 @@ async function replyLegacyAdventDay(ctx: Context, d: AdventDayPayload, day: numb
 }
 
 bot.start(async (ctx) => {
-  const id = await ensureUser(ctx);
+  const { tid, profile } = await ensureUser(ctx);
+  if (!profile.pdConsentAt) {
+    await askConsent(ctx);
+    return;
+  }
+  if (!profile.fullName) { await askName(ctx, tid); return; }
+  if (!profile.age)      { await askAge(ctx, tid);  return; }
+  if (!profile.university) { await askUniversity(ctx, tid); return; }
   await ctx.reply(
-    "Привет! Это бот кампании «Резонанс». Здесь адвент на 21 день, запись на тренировки и розыгрыши.\n\n" +
-      `Ваш ID: ${id} (пригодится для поддержки).`,
+    "С возвращением! Вот главное меню:",
     mainKb
   );
 });
 
+bot.action("pd_consent", async (ctx) => {
+  await ctx.answerCbQuery();
+  const f = ctx.from;
+  if (!f) return;
+  const tid = String(f.id);
+  await api.updateProfile(tid, { pdConsent: true });
+  await askName(ctx, tid);
+});
+
 bot.command("menu", async (ctx) => {
-  await ensureUser(ctx);
+  const { tid, profile } = await ensureUser(ctx);
+  if (!profile.pdConsentAt) { await askConsent(ctx); return; }
+  if (!profile.fullName)    { await askName(ctx, tid); return; }
+  if (!profile.age)         { await askAge(ctx, tid);  return; }
+  if (!profile.university)  { await askUniversity(ctx, tid); return; }
   await ctx.reply("Главное меню:", mainKb);
+});
+
+// ─── Обработка текстовых ответов во время онбординга ─────────────────────────
+bot.on("text", async (ctx, next) => {
+  const f = ctx.from;
+  if (!f) return next();
+  const tid = String(f.id);
+  const step = waitingFor.get(tid);
+  if (!step) return next();
+
+  const text = ctx.message.text.trim();
+
+  if (step === "name") {
+    if (text.split(/\s+/).length < 2) {
+      await ctx.reply("Пожалуйста, введи полное ФИО (минимум имя и фамилия):");
+      return;
+    }
+    await api.updateProfile(tid, { fullName: text });
+    await askAge(ctx, tid);
+    return;
+  }
+
+  if (step === "age") {
+    const age = parseInt(text, 10);
+    if (isNaN(age) || age < 10 || age > 120) {
+      await ctx.reply("Введи корректный возраст (числом, например: 21):");
+      return;
+    }
+    await api.updateProfile(tid, { age });
+    await askUniversity(ctx, tid);
+    return;
+  }
+
+  if (step === "university") {
+    await api.updateProfile(tid, { university: text });
+    waitingFor.delete(tid);
+    await finishOnboarding(ctx);
+    return;
+  }
+
+  return next();
 });
 
 function adventGrid(current: number | null) {
@@ -166,7 +271,7 @@ function adventGrid(current: number | null) {
 }
 
 bot.hears("🎄 Адвент", async (ctx) => {
-  const tid = await ensureUser(ctx);
+  const { tid } = await ensureUser(ctx);
   const data = (await api.advent(tid)) as {
     currentAdventDay: number | null;
     days: Array<{
@@ -191,7 +296,7 @@ bot.hears("🎄 Адвент", async (ctx) => {
 
 bot.action(/advent:(\d+)/, async (ctx) => {
   const day = Number(ctx.match[1]);
-  const tid = await ensureUser(ctx);
+  const { tid } = await ensureUser(ctx);
   const data = (await api.advent(tid)) as { days: AdventDayPayload[] };
   const d = data.days.find((x) => x.day === day);
   if (!d) {
@@ -208,7 +313,8 @@ bot.action(/advent:(\d+)/, async (ctx) => {
   if (miniQuizCount > 0) {
     const openUrl = buildMiniAppTmeLink(botConfig.miniAppTmeBase, day);
     if (openUrl) {
-      await ctx.answerCbQuery({ url: openUrl });
+      await ctx.answerCbQuery();
+      await ctx.reply(`Открыть день ${day} в Mini App: ${openUrl}`);
       return;
     }
     await ctx.answerCbQuery(
@@ -223,7 +329,7 @@ bot.action(/advent:(\d+)/, async (ctx) => {
 });
 
 bot.action(/quiz:(\d+):(\d+)/, async (ctx) => {
-  const tid = await ensureUser(ctx);
+  const { tid } = await ensureUser(ctx);
   const day = Number(ctx.match[1]);
   const idx = Number(ctx.match[2]);
   try {
@@ -236,7 +342,7 @@ bot.action(/quiz:(\d+):(\d+)/, async (ctx) => {
 });
 
 bot.action(/conf:(\d+)/, async (ctx) => {
-  const tid = await ensureUser(ctx);
+  const { tid } = await ensureUser(ctx);
   const day = Number(ctx.match[1]);
   try {
     await api.task(tid, day, { confirm: true });
@@ -267,7 +373,7 @@ bot.hears("🏋️ Тренировки", async (ctx) => {
 });
 
 bot.action(/train:([a-z0-9]+)/, async (ctx) => {
-  const tid = await ensureUser(ctx);
+  const { tid } = await ensureUser(ctx);
   const id = ctx.match[1];
   const list = (await api.trainings()) as Array<{
     id: string;
@@ -300,7 +406,7 @@ bot.action(/train:([a-z0-9]+)/, async (ctx) => {
 bot.action("noop", async (ctx) => ctx.answerCbQuery());
 
 bot.action(/signup:([a-z0-9]+)/, async (ctx) => {
-  const tid = await ensureUser(ctx);
+  const { tid } = await ensureUser(ctx);
   const id = ctx.match[1];
   await api.signupTraining(tid, id);
   await ctx.answerCbQuery("Вы записаны!");
@@ -316,8 +422,28 @@ bot.hears("❓ Вопрос-ответ", async (ctx) => {
     return;
   }
   const faq = JSON.parse(raw) as { q: string; a: string }[];
-  const text = faq.map((x) => `*${x.q}*\n${x.a}`).join("\n\n");
-  await ctx.reply(text, { parse_mode: "Markdown" });
+  if (!faq.length) {
+    await ctx.reply("Раздел скоро пополним.");
+    return;
+  }
+
+  // Разбиваем на части если FAQ большой (лимит сообщения Telegram — 4096 символов)
+  const chunks: string[] = [];
+  let current = "❓ *Вопросы и ответы*\n\n";
+  faq.forEach((item, i) => {
+    const block = `*${i + 1}. ${item.q}*\n${item.a}\n\n`;
+    if ((current + block).length > 3800) {
+      chunks.push(current.trim());
+      current = block;
+    } else {
+      current += block;
+    }
+  });
+  if (current.trim()) chunks.push(current.trim());
+
+  for (const chunk of chunks) {
+    await ctx.reply(chunk, { parse_mode: "Markdown" });
+  }
 });
 
 bot.hears("🛟 Поддержка", async (ctx) => {
@@ -327,7 +453,7 @@ bot.hears("🛟 Поддержка", async (ctx) => {
 });
 
 bot.hears("🎁 Розыгрыши", async (ctx) => {
-  const tid = await ensureUser(ctx);
+  const { tid } = await ensureUser(ctx);
   const data = (await api.giveaways(tid)) as {
     totalGiveawayEntries: number;
     giveaways: Array<{
@@ -366,7 +492,7 @@ bot.hears("🎁 Розыгрыши", async (ctx) => {
 });
 
 bot.action(/gw:(\d+)/, async (ctx) => {
-  const tid = await ensureUser(ctx);
+  const { tid } = await ensureUser(ctx);
   const id = Number(ctx.match[1]);
   try {
     await api.enterGiveaway(tid, id);
@@ -379,25 +505,50 @@ bot.action(/gw:(\d+)/, async (ctx) => {
   }
 });
 
-bot.hears("📍 Как добраться", async (ctx) => {
+bot.hears("📍 Маршрут до места", async (ctx) => {
   await ensureUser(ctx);
-  const site = await api.site();
-  await ctx.reply(site.route_md ?? "Скоро добавим схему и видео.");
+  const address = "📍 Москва, Малый Zlatоустинский пер., 7, стр. 1";
+  const mapUrl = `${botConfig.webUrl}/route-map.png`;
+  const caption =
+    `*Адрес:* Москва, Малый Златоустинский пер., 7, стр. 1\n\n` +
+    `🗺 Открыть в картах:\n` +
+    `[Яндекс Карты](https://yandex.ru/maps/?text=Малый+Златоустинский+пер.+7+стр.+1+Москва) · ` +
+    `[Google Maps](https://maps.google.com/?q=Малый+Златоустинский+пер.+7+стр.+1,+Москва)`;
+  try {
+    await ctx.replyWithPhoto(mapUrl, { caption, parse_mode: "Markdown" });
+  } catch {
+    await ctx.reply(caption, { parse_mode: "Markdown" });
+  }
 });
 
-bot.hears("🌐 Сайт", async (ctx) => {
+bot.hears("📱 Мини-апп", async (ctx) => {
   await ensureUser(ctx);
-  await ctx.reply(`Откройте лендинг кампании: ${botConfig.webUrl}`);
+  const base = botConfig.miniAppTmeBase.trim();
+  if (!base) {
+    await ctx.reply(`Откройте Мини-апп по ссылке: ${botConfig.webUrl}/mini`);
+    return;
+  }
+  let href = /^t\.me\//i.test(base) ? `https://${base}` : base;
+  try {
+    const u = new URL(href);
+    u.searchParams.delete("startapp");
+    href = u.toString();
+  } catch { /* оставляем как есть */ }
+
+  await ctx.reply(
+    "Нажмите кнопку ниже, чтобы открыть Мини-апп кампании «Резонанс»:",
+    Markup.inlineKeyboard([[Markup.button.webApp("🚀 Открыть Мини-апп", href)]])
+  );
 });
 
 bot.hears("🔕 Без напоминаний", async (ctx) => {
-  const tid = await ensureUser(ctx);
+  const { tid } = await ensureUser(ctx);
   await api.mute(tid, true);
   await ctx.reply("Напоминания об адвенте отключены. Команда /remind включит снова.");
 });
 
 bot.command("remind", async (ctx) => {
-  const tid = await ensureUser(ctx);
+  const { tid } = await ensureUser(ctx);
   await api.mute(tid, false);
   await ctx.reply("Напоминания снова включены.");
 });
@@ -413,6 +564,58 @@ cron.schedule("0 */2 * * *", async () => {
     }
   } catch (e) {
     console.error("reminder cron", e);
+  }
+});
+
+// ─── Рассылки: бот каждые 2 минуты проверяет очередь ────────────────────────
+cron.schedule("* * * * *", async () => {
+  try {
+    const h: Record<string, string> = {};
+    if (botConfig.internalKey) h["x-internal-key"] = botConfig.internalKey;
+    const r = await fetch(`${botConfig.apiBase}/api/internal/pending-broadcast`, { headers: h });
+    if (!r.ok) return;
+    const data = await r.json() as { broadcast: { message: string } | null; telegramIds: string[] };
+    if (!data.broadcast) return;
+
+    let sent = 0;
+    for (const tid of data.telegramIds) {
+      try {
+        await bot.telegram.sendMessage(tid, data.broadcast.message);
+        sent++;
+      } catch { /* пользователь заблокировал бота */ }
+    }
+    console.log(`Broadcast sent to ${sent}/${data.telegramIds.length} users`);
+  } catch (e) {
+    console.error("broadcast cron", e);
+  }
+});
+
+// ─── Команда /broadcast для бот-админов ──────────────────────────────────────
+bot.command("broadcast", async (ctx) => {
+  const f = ctx.from;
+  if (!f) return;
+  if (!(await isBotAdmin(String(f.id)))) {
+    await ctx.reply("⛔ Нет доступа.");
+    return;
+  }
+  const text = ctx.message.text.replace(/^\/broadcast\s*/, "").trim();
+  if (!text) {
+    await ctx.reply("Использование: /broadcast Текст сообщения");
+    return;
+  }
+  const h: Record<string, string> = {
+    "content-type": "application/json",
+    "x-admin-key": botConfig.adminKey,
+  };
+  const r = await fetch(`${botConfig.apiBase}/api/admin/bot/broadcasts`, {
+    method: "POST",
+    headers: h,
+    body: JSON.stringify({ message: text }),
+  });
+  if (r.ok) {
+    await ctx.reply("✅ Рассылка поставлена в очередь. Будет отправлена в течение минуты.");
+  } else {
+    await ctx.reply("❌ Ошибка при создании рассылки.");
   }
 });
 

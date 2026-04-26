@@ -37,8 +37,43 @@ usersRouter.post("/upsert", async (req, res) => {
       lastName: body.data.lastName,
       lastActivityAt: new Date(),
     },
+    select: {
+      telegramId: true,
+      pdConsentAt: true,
+      fullName: true,
+      age: true,
+      university: true,
+    },
   });
   res.json(u);
+});
+
+const UpdateProfile = z.object({
+  pdConsent: z.boolean().optional(),
+  fullName: z.string().min(2).max(200).optional(),
+  age: z.number().int().min(10).max(120).optional(),
+  university: z.string().min(1).max(300).optional(),
+});
+
+usersRouter.patch("/:telegramId/profile", async (req, res) => {
+  const telegramId = req.params.telegramId;
+  const body = UpdateProfile.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.flatten() });
+    return;
+  }
+  const data: Record<string, unknown> = {};
+  if (body.data.pdConsent) data.pdConsentAt = new Date();
+  if (body.data.fullName !== undefined) data.fullName = body.data.fullName;
+  if (body.data.age !== undefined) data.age = body.data.age;
+  if (body.data.university !== undefined) data.university = body.data.university;
+
+  const user = await prisma.user.updateMany({ where: { telegramId }, data });
+  if (user.count === 0) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 usersRouter.patch("/:telegramId/mute", async (req, res) => {

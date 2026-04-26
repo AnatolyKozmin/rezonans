@@ -7,6 +7,7 @@ import { usersRouter } from "./routes/users.js";
 import { adminRouter } from "./routes/admin.js";
 import { adminAdventRouter } from "./routes/adminAdvent.js";
 import { adminSiteRouter } from "./routes/adminSite.js";
+import { adminBotRouter } from "./routes/adminBot.js";
 import { internalRouter } from "./routes/internal.js";
 import { miniAdventRouter } from "./routes/miniAdvent.js";
 
@@ -25,6 +26,7 @@ export function createApp() {
   app.use("/api/admin", adminRouter);
   app.use("/api/admin/advent", adminAdventRouter);
   app.use("/api/admin/site", adminSiteRouter);
+  app.use("/api/admin/bot", adminBotRouter);
   app.use("/api/internal", internalRouter);
   return app;
 }
