@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { AdventCalendar } from "./AdventCalendar";
 import WebApp from "@twa-dev/sdk";
 
@@ -214,11 +213,7 @@ export function App() {
         <pre className="route-block">{site.route_md ?? "Текст появится после наполнения."}</pre>
       </div>
 
-      <footer className="footer">
-        <Link to="/admin" className="footer-admin-link">
-          Админка
-        </Link>
-      </footer>
+      <footer className="footer" />
     </div>
   );
 }

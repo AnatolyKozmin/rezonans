@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import WebApp from "@twa-dev/sdk";
 
@@ -141,7 +141,7 @@ export function MiniAdventPage() {
   const [loading, setLoading] = useState(true);
   const [payload, setPayload] = useState<LoadPayload | null>(null);
   const [phase, setPhase] = useState<Phase>("material");
-
+  const scrollRef = useRef<HTMLDivElement>(null);
   // Quiz state
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
@@ -152,7 +152,10 @@ export function MiniAdventPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState<string | null>(null);
 
-  // Results
+  // Скролл в начало при смене вопроса
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
+  }, [step]);
   const [quizResults, setQuizResults] = useState<QuizResult[] | null>(null);
   const [quizScore, setQuizScore] = useState<number | null>(null);
 
@@ -531,10 +534,12 @@ export function MiniAdventPage() {
         <div className="mini-progress-bar__fill" style={{ width: `${progressPct}%` }} />
       </div>
 
-      <div className="mini-shell__scroll">
+      <div className="mini-shell__scroll" ref={scrollRef}>
         <article className="mini-q-card">
           {q.imageUrl ? (
-            <img className="mini-q-card__img" src={q.imageUrl} alt="" decoding="async" />
+            <div className="mini-q-card__img-wrap">
+              <img className="mini-q-card__img" src={q.imageUrl} alt="" decoding="async" />
+            </div>
           ) : null}
           <p className="mini-q-card__prompt">{q.prompt}</p>
 
