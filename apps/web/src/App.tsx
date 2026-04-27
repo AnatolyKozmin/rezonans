@@ -215,15 +215,8 @@ export function App() {
       </div>
 
       <footer className="footer">
-        Дизайн-гайдлайн: тёмный фон <span className="mono">#252736</span>, акценты{" "}
-        <span className="mono">#B8FF00</span> и <span className="mono">#7E52FF</span>, шрифты Russo One и Nunito. Настройте
-        бота и даты кампании в <span className="mono">.env</span>.{" "}
         <Link to="/admin" className="footer-admin-link">
-          Админка адвента
-        </Link>
-        {" · "}
-        <Link to="/admin/site" className="footer-admin-link">
-          FAQ и маршрут
+          Админка
         </Link>
       </footer>
     </div>

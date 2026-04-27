@@ -106,6 +106,7 @@ adminBotRouter.post("/giveaways/:id/pick", async (req, res) => {
 // ─── Stats ────────────────────────────────────────────────────────────────────
 
 adminBotRouter.get("/stats", async (_req, res) => {
+  try {
   const now = new Date();
   const day1 = new Date(now); day1.setHours(0, 0, 0, 0);
   const day7 = new Date(day1); day7.setDate(day7.getDate() - 6);
@@ -141,7 +142,7 @@ adminBotRouter.get("/stats", async (_req, res) => {
       take: 10,
     }),
     // Открытия по дням за последние 30 дней
-    prisma.$queryRaw<{ date: string; count: number }[]>`
+    prisma.$queryRaw<{ date: string; count: bigint }[]>`
       SELECT date(openedAt) as date, COUNT(*) as count
       FROM MiniAppOpen
       WHERE openedAt >= ${day30.toISOString()}
@@ -166,6 +167,10 @@ adminBotRouter.get("/stats", async (_req, res) => {
     opensByDay: opensByDay.map((r) => ({ date: r.date, count: Number(r.count) })),
     topUsers: userOpenCounts.map((r) => ({ telegramId: r.telegramId, opens: r._count._all })),
   });
+  } catch (e) {
+    console.error("stats error", e);
+    res.status(500).json({ error: String(e) });
+  }
 });
 
 // ─── Per-user open count ──────────────────────────────────────────────────────

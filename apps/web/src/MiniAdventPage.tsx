@@ -73,6 +73,16 @@ function DayMaterial({ dc, day }: { dc: DayContent; day: number }) {
     () => [...dc.media].sort((a, b) => a.position - b.position),
     [dc.media]
   );
+
+  // Prewarm browser cache for all images in this day
+  useEffect(() => {
+    const urls = [
+      ...sorted.filter((m) => m.kind === "IMAGE").map((m) => m.url),
+      dc.testImageUrl ?? null,
+    ].filter(Boolean) as string[];
+    urls.forEach((url) => { const i = new Image(); i.src = url; });
+  }, [sorted, dc.testImageUrl]);
+
   return (
     <div className="mini-material">
       <div className="mini-material__head">
@@ -90,7 +100,7 @@ function DayMaterial({ dc, day }: { dc: DayContent; day: number }) {
               {m.kind === "VIDEO" ? (
                 <video className="mini-material__img" controls playsInline src={m.url} preload="metadata" />
               ) : (
-                <img className="mini-material__img" src={m.url} alt="" loading="lazy" />
+                <img className="mini-material__img" src={m.url} alt="" decoding="async" />
               )}
               {m.caption ? <figcaption className="mini-material__cap">{m.caption}</figcaption> : null}
             </figure>
@@ -112,7 +122,7 @@ function DayMaterial({ dc, day }: { dc: DayContent; day: number }) {
       </div>
 
       {dc.testImageUrl ? (
-        <img className="mini-material__test-img" src={dc.testImageUrl} alt="" loading="lazy" />
+        <img className="mini-material__test-img" src={dc.testImageUrl} alt="" decoding="async" />
       ) : null}
 
       {dc.taskPrompt?.trim() ? (
@@ -205,6 +215,8 @@ export function MiniAdventPage() {
         const qsList = Array.isArray(j.questions) ? (j.questions as QuizQuestion[]) : [];
         const hasQuiz = j.hasQuiz === true && qsList.length > 0;
         setPayload({ completed: false, day: typeof j.day === "number" ? j.day : day, dayContent, questions: qsList, hasQuiz });
+        // Prewarm картинок вопросов
+        qsList.forEach((q) => { if (q.imageUrl) { const i = new Image(); i.src = q.imageUrl; } });
         setPhase("material");
         setStep(0);
         setAnswers({});
@@ -522,7 +534,7 @@ export function MiniAdventPage() {
       <div className="mini-shell__scroll">
         <article className="mini-q-card">
           {q.imageUrl ? (
-            <img className="mini-q-card__img" src={q.imageUrl} alt="" loading="lazy" decoding="async" />
+            <img className="mini-q-card__img" src={q.imageUrl} alt="" decoding="async" />
           ) : null}
           <p className="mini-q-card__prompt">{q.prompt}</p>
 

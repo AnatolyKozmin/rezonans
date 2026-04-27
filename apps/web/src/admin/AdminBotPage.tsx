@@ -55,12 +55,19 @@ export function AdminBotPage() {
   const load = useCallback(async () => {
     if (!savedKey) return;
     setErr(null);
+    const safeJson = async (r: Response) => {
+      if (!r.ok) {
+        const text = await r.text().catch(() => r.statusText);
+        throw new Error(`HTTP ${r.status}: ${text.slice(0, 120)}`);
+      }
+      return r.json();
+    };
     try {
       const [a, b, g, s] = await Promise.all([
-        fetch("/api/admin/bot/admins", { headers: h() }).then((r) => r.json()),
-        fetch("/api/admin/bot/broadcasts", { headers: h() }).then((r) => r.json()),
-        fetch("/api/admin/bot/giveaways", { headers: h() }).then((r) => r.json()),
-        fetch("/api/admin/bot/stats", { headers: h() }).then((r) => r.json()),
+        fetch("/api/admin/bot/admins", { headers: h() }).then(safeJson),
+        fetch("/api/admin/bot/broadcasts", { headers: h() }).then(safeJson),
+        fetch("/api/admin/bot/giveaways", { headers: h() }).then(safeJson),
+        fetch("/api/admin/bot/stats", { headers: h() }).then(safeJson),
       ]);
       if (a.error) throw new Error(a.error);
       setAdmins(a);

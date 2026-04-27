@@ -119,6 +119,9 @@ export function MiniHomePage() {
                 >
                   <span className="mini-day-card__num">{d.day}</span>
                   <span className="mini-day-card__lock" aria-hidden>🔒</span>
+                  {d.hasQuiz && (
+                    <span className="mini-day-card__quiz-badge" aria-label="есть тест">Тест</span>
+                  )}
                 </div>
               );
             }
