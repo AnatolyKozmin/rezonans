@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../db.js";
+import { config } from "../config.js";
 import { currentAdventDayNumber, isAdventDayUnlocked } from "../campaign.js";
 
 export const publicRouter = Router();
@@ -41,6 +42,17 @@ publicRouter.get("/advent", async (_req, res) => {
     },
   });
   const current = currentAdventDayNumber();
+
+  // Миллисекунды до следующей полуночи в TZ кампании
+  const nowParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: config.tz,
+    hour: "numeric", minute: "numeric", second: "numeric", hour12: false,
+  }).formatToParts(new Date());
+  const tzH  = Number(nowParts.find((p) => p.type === "hour")?.value   ?? 0);
+  const tzM  = Number(nowParts.find((p) => p.type === "minute")?.value ?? 0);
+  const tzS  = Number(nowParts.find((p) => p.type === "second")?.value ?? 0);
+  const msUntilMidnight = 86_400_000 - (tzH * 3600 + tzM * 60 + tzS) * 1000;
+  const nextDayAt = new Date(Date.now() + msUntilMidnight).toISOString();
   const days = rows.map((d) => {
     const {
       correctIndex: _c,
@@ -63,5 +75,5 @@ publicRouter.get("/advent", async (_req, res) => {
       media: media.map(mapMedia),
     };
   });
-  res.json({ currentAdventDay: current, days });
+  res.json({ currentAdventDay: current, nextDayAt, days });
 });

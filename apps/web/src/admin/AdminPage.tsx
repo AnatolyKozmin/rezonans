@@ -91,6 +91,27 @@ export function AdminPage() {
   const [uploadCaption, setUploadCaption] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingTestImage, setPendingTestImage] = useState<File | null>(null);
+
+  // Обратный отсчёт до следующего дня
+  const [nextDayAt, setNextDayAt] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState<string>("");
+  useEffect(() => {
+    fetch("/api/advent").then((r) => r.json()).then((j) => { if (j.nextDayAt) setNextDayAt(j.nextDayAt); }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!nextDayAt) return;
+    const tick = () => {
+      const ms = new Date(nextDayAt).getTime() - Date.now();
+      if (ms <= 0) { setCountdown("сейчас откроется"); return; }
+      const h = Math.floor(ms / 3_600_000);
+      const m = Math.floor((ms % 3_600_000) / 60_000);
+      const s = Math.floor((ms % 60_000) / 1_000);
+      setCountdown(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [nextDayAt]);
   const [mediaCaptionDrafts, setMediaCaptionDrafts] = useState<Record<string, string>>({});
   const [savingCaptionId, setSavingCaptionId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -437,6 +458,12 @@ export function AdminPage() {
               ? "Загрузка списка дней…"
               : `День ${selected} из 21 · контент задаётся здесь; материалы — в папку uploads на сервере`}
           </p>
+          {countdown && (
+            <p className="admin-countdown">
+              <span className="admin-countdown__label">Следующий день через</span>
+              <span className="admin-countdown__time">{countdown}</span>
+            </p>
+          )}
         </div>
         <div className="admin-top-actions">
           <Link to="/" className="admin-link">
