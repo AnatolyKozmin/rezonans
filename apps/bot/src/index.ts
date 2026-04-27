@@ -523,10 +523,10 @@ bot.hears("📍 Маршрут до места", async (ctx) => {
 
 bot.hears("📱 Мини-апп", async (ctx) => {
   await ensureUser(ctx);
-  const webAppUrl = `${botConfig.webUrl}/mini`;
+  const webAppUrl = `${botConfig.webUrl}`;
   await ctx.reply(
-    "Нажмите кнопку ниже, чтобы открыть Мини-апп кампании «Резонанс»:",
-    Markup.inlineKeyboard([[Markup.button.webApp("🚀 Открыть Мини-апп", webAppUrl)]])
+    "Открой мини-приложение кнопкой ниже — так Telegram передаст данные для входа.",
+    Markup.inlineKeyboard([[Markup.button.webApp("📱 Открыть Мини-апп", webAppUrl)]])
   );
 });
 
@@ -595,7 +595,7 @@ cron.schedule("0 9,21 * * *", async () => {
           {
             reply_markup: {
               inline_keyboard: [[
-                { text: "📱 Открыть Мини-апп", web_app: { url: `${botConfig.webUrl}/mini` } },
+                { text: "📱 Открыть Мини-апп", web_app: { url: `${botConfig.webUrl}` } },
               ]],
             },
           }

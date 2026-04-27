@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AdventCalendar } from "./AdventCalendar";
+import WebApp from "@twa-dev/sdk";
 
 type Training = {
   id: string;
@@ -75,6 +76,9 @@ export function App() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    // Если открыто через Telegram Mini App — сообщаем что загрузились
+    try { if (WebApp.initData) { WebApp.ready(); WebApp.expand(); } } catch { /* браузер */ }
+
     (async () => {
       try {
         const [s, t] = await Promise.all([
