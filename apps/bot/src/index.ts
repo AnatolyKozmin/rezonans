@@ -451,8 +451,8 @@ bot.hears("🛟 Поддержка", async (ctx) => {
   const site = await api.site();
   const hint =
     "В случае проблем с работой напишите в предложку канала @rezonans_sport";
-  const main = site.support_text ?? "Напишите в зону наполнения вашего чата кампании.";
-  await ctx.reply(`${main}\n\n${hint}`);
+  const custom = site.support_text?.trim();
+  await ctx.reply(custom ? `${custom}\n\n${hint}` : hint);
 });
 
 bot.hears("🎁 Розыгрыши", async (ctx) => {
