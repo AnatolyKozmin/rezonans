@@ -16,6 +16,7 @@ type QuestionRow = {
   position: number;
   prompt: string;
   kind: string;
+  acceptAnyAnswer?: boolean;
   optionsJson: string | null;
   textAnswersJson: string | null;
   imageFilename: string | null;
@@ -44,6 +45,7 @@ type QuestionDraft = {
   key: string;
   prompt: string;
   kind: QKind;
+  acceptAnyAnswer: boolean;
   options: { text: string; correct: boolean }[];
   textAnswersLines: string;
 };
@@ -71,6 +73,7 @@ function draftsFromApi(rows: QuestionRow[] | undefined): QuestionDraft[] {
     key: q.id,
     prompt: q.prompt,
     kind: q.kind as QKind,
+    acceptAnyAnswer: q.acceptAnyAnswer === true,
     options: q.optionsJson
       ? (JSON.parse(q.optionsJson) as { text: string; correct: boolean }[])
       : defaultOptions(q.kind as QKind),
@@ -233,7 +236,7 @@ export function AdminPage() {
         setErr(`Вопрос ${i + 1}: введите текст вопроса`);
         return;
       }
-      if (d.kind === "TEXT") {
+      if (d.kind === "TEXT" && !d.acceptAnyAnswer) {
         const lines = d.textAnswersLines.split("\n").map((l) => l.trim()).filter(Boolean);
         if (lines.length < 1) {
           setErr(`Вопрос ${i + 1}: укажите эталонные ответы (каждый с новой строки)`);
@@ -246,32 +249,37 @@ export function AdminPage() {
           setErr(`Вопрос ${i + 1}: нужно минимум два непустых варианта`);
           return;
         }
-        const nCorrect = d.options.filter((o) => o.correct && o.text.trim()).length;
-        if (d.kind === "SINGLE" && nCorrect !== 1) {
-          setErr(`Вопрос ${i + 1}: отметьте ровно один верный вариант`);
-          return;
-        }
-        if (d.kind === "MULTI" && nCorrect < 1) {
-          setErr(`Вопрос ${i + 1}: отметьте хотя бы один верный вариант`);
-          return;
+        if (!d.acceptAnyAnswer) {
+          const nCorrect = d.options.filter((o) => o.correct && o.text.trim()).length;
+          if (d.kind === "SINGLE" && nCorrect !== 1) {
+            setErr(`Вопрос ${i + 1}: отметьте ровно один верный вариант`);
+            return;
+          }
+          if (d.kind === "MULTI" && nCorrect < 1) {
+            setErr(`Вопрос ${i + 1}: отметьте хотя бы один верный вариант`);
+            return;
+          }
         }
       }
     }
 
     const payload = questionDrafts.map((d) => {
+      const any = d.acceptAnyAnswer ? { acceptAnyAnswer: true as const } : {};
       if (d.kind === "TEXT") {
         return {
           prompt: d.prompt.trim(),
           kind: d.kind,
+          ...any,
           textAnswers: d.textAnswersLines.split("\n").map((l) => l.trim()).filter(Boolean),
         };
       }
       if (d.kind === "IMAGE") {
-        return { prompt: d.prompt.trim(), kind: d.kind };
+        return { prompt: d.prompt.trim(), kind: d.kind, ...any };
       }
       return {
         prompt: d.prompt.trim(),
         kind: d.kind,
+        ...any,
         options: d.options
           .filter((o) => o.text.trim())
           .map((o) => ({ text: o.text.trim(), correct: o.correct })),
@@ -658,6 +666,7 @@ export function AdminPage() {
                             key: crypto.randomUUID(),
                             prompt: "",
                             kind: "SINGLE",
+                            acceptAnyAnswer: false,
                             options: defaultOptions("SINGLE"),
                             textAnswersLines: "",
                           },
@@ -688,7 +697,15 @@ export function AdminPage() {
                         <div className="admin-row" style={{ flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.75rem", alignItems: "center" }}>
                           <span className="admin-badge">#{qi + 1}</span>
                           <span className="admin-badge" style={{ background: "rgba(126,82,255,0.18)", color: "#c5aaff" }}>
-                            {qd.kind === "SINGLE" ? "Один верный" : qd.kind === "MULTI" ? "Несколько верных" : qd.kind === "TEXT" ? "Текст" : "Фото"}
+                            {qd.acceptAnyAnswer
+                              ? "Любой ответ"
+                              : qd.kind === "SINGLE"
+                                ? "Один верный"
+                                : qd.kind === "MULTI"
+                                  ? "Несколько верных"
+                                  : qd.kind === "TEXT"
+                                    ? "Текст"
+                                    : "Фото"}
                           </span>
                           <span style={{ flex: 1 }} />
                           <button
@@ -758,6 +775,7 @@ export function AdminPage() {
                                     ? {
                                         ...x,
                                         kind,
+                                        acceptAnyAnswer: false,
                                         options: kind === "SINGLE" || kind === "MULTI" ? defaultOptions(kind) : [],
                                         textAnswersLines: kind === "TEXT" ? x.textAnswersLines : "",
                                       }
@@ -773,14 +791,48 @@ export function AdminPage() {
                           </select>
                         </label>
 
+                        {(qd.kind === "SINGLE" || qd.kind === "MULTI" || qd.kind === "TEXT") && (
+                          <label
+                            className="admin-label"
+                            style={{
+                              marginTop: "0.35rem",
+                              display: "flex",
+                              flexDirection: "row",
+                              alignItems: "flex-start",
+                              gap: "0.6rem",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              style={{ marginTop: "0.2rem" }}
+                              checked={qd.acceptAnyAnswer}
+                              onChange={(e) =>
+                                setQuestionDrafts((list) =>
+                                  list.map((x, i) => (i === qi ? { ...x, acceptAnyAnswer: e.target.checked } : x))
+                                )
+                              }
+                            />
+                            <span className="admin-muted">
+                              Любой ответ засчитывается (режим без одного правильного варианта)
+                            </span>
+                          </label>
+                        )}
+
                         {qd.kind === "SINGLE" || qd.kind === "MULTI" ? (
                           <div style={{ marginTop: "0.5rem" }}>
                             <p className="admin-muted" style={{ margin: "0 0 0.5rem" }}>
-                              Варианты {qd.kind === "SINGLE" ? "(верный один)" : "(отметьте все верные)"}
+                              {qd.acceptAnyAnswer
+                                ? "Варианты (любой выбранный вариант верный)"
+                                : qd.kind === "SINGLE"
+                                  ? "Варианты (верный один)"
+                                  : "Варианты (отметьте все верные)"}
                             </p>
                             {qd.options.map((opt, oi) => (
                               <div key={oi} className="admin-row" style={{ alignItems: "center", gap: "0.5rem", marginBottom: "0.35rem" }}>
-                                {qd.kind === "SINGLE" ? (
+                                {qd.acceptAnyAnswer ? (
+                                  <span style={{ width: "1.35rem", flexShrink: 0 }} aria-hidden />
+                                ) : qd.kind === "SINGLE" ? (
                                   <input
                                     type="radio"
                                     name={`correct-${qd.key}`}
@@ -885,7 +937,9 @@ export function AdminPage() {
 
                         {qd.kind === "TEXT" ? (
                           <label className="admin-label">
-                            Допустимые ответы (каждый с новой строки, без учёта регистра)
+                            {qd.acceptAnyAnswer
+                              ? "Опционально: примеры ответов для себя (не используются для проверки)"
+                              : "Допустимые ответы (каждый с новой строки, без учёта регистра)"}
                             <textarea
                               className="admin-textarea"
                               rows={4}
@@ -895,7 +949,7 @@ export function AdminPage() {
                                   list.map((x, i) => (i === qi ? { ...x, textAnswersLines: e.target.value } : x))
                                 )
                               }
-                              placeholder={"Да\nОк\nСогласен"}
+                              placeholder={qd.acceptAnyAnswer ? "Необязательно" : "Да\nОк\nСогласен"}
                             />
                           </label>
                         ) : null}

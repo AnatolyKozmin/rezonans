@@ -53,6 +53,7 @@ function adventDayPayloadFromSite(d: z.infer<typeof PutDaySite>) {
 const QuestionIn = z.object({
   prompt: z.string().min(1),
   kind: z.enum(["SINGLE", "MULTI", "TEXT", "IMAGE"]),
+  acceptAnyAnswer: z.boolean().optional(),
   options: z
     .array(z.object({ text: z.string().min(1), correct: z.boolean() }))
     .optional(),
@@ -65,6 +66,7 @@ const PutQuestionsBody = z
   })
   .superRefine((data, ctx) => {
     data.questions.forEach((q, i) => {
+      const anyOk = q.acceptAnyAnswer === true;
       if (q.kind === "SINGLE" || q.kind === "MULTI") {
         const opts = q.options ?? [];
         if (opts.length < 2) {
@@ -74,25 +76,27 @@ const PutQuestionsBody = z
             path: ["questions", i, "options"],
           });
         }
-        const correctN = opts.filter((o) => o.correct).length;
-        if (q.kind === "SINGLE" && correctN !== 1) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "Один вариант должен быть отмечен как верный",
-            path: ["questions", i],
-          });
-        }
-        if (q.kind === "MULTI" && correctN < 1) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "Отметьте хотя бы один верный вариант",
-            path: ["questions", i],
-          });
+        if (!anyOk) {
+          const correctN = opts.filter((o) => o.correct).length;
+          if (q.kind === "SINGLE" && correctN !== 1) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "Один вариант должен быть отмечен как верный",
+              path: ["questions", i],
+            });
+          }
+          if (q.kind === "MULTI" && correctN < 1) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "Отметьте хотя бы один верный вариант",
+              path: ["questions", i],
+            });
+          }
         }
       }
       if (q.kind === "TEXT") {
         const ta = (q.textAnswers ?? []).map((t) => t.trim()).filter(Boolean);
-        if (ta.length < 1) {
+        if (!anyOk && ta.length < 1) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: "Укажите эталонные ответы (минимум один)",
@@ -200,6 +204,7 @@ adminAdventRouter.put("/days/:day/questions", async (req, res) => {
           position: i,
           prompt: q.prompt,
           kind: q.kind,
+          acceptAnyAnswer: q.acceptAnyAnswer === true,
           optionsJson:
             q.kind === "SINGLE" || q.kind === "MULTI"
               ? JSON.stringify(q.options ?? [])

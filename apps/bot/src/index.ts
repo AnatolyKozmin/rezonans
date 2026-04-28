@@ -449,7 +449,10 @@ bot.hears("❓ Вопрос-ответ", async (ctx) => {
 bot.hears("🛟 Поддержка", async (ctx) => {
   await ensureUser(ctx);
   const site = await api.site();
-  await ctx.reply(site.support_text ?? "Напишите в зону наполнения вашего чата кампании.");
+  const hint =
+    "В случае проблем с работой напишите в предложку канала @rezonans_sport";
+  const main = site.support_text ?? "Напишите в зону наполнения вашего чата кампании.";
+  await ctx.reply(`${main}\n\n${hint}`);
 });
 
 bot.hears("🎁 Розыгрыши", async (ctx) => {

@@ -9,6 +9,7 @@ type QuizQuestion = {
   position: number;
   prompt: string;
   kind: string;
+  acceptAnyAnswer?: boolean;
   imageUrl: string | null;
   options?: QOption[];
 };
@@ -542,6 +543,9 @@ export function MiniAdventPage() {
             </div>
           ) : null}
           <p className="mini-q-card__prompt">{q.prompt}</p>
+          {q.acceptAnyAnswer ? (
+            <p className="mini-q-card__hint">Любой ответ считается верным</p>
+          ) : null}
 
           {q.kind === "SINGLE" && q.options ? (
             <div className="mini-options" role="radiogroup" aria-label="Выберите один вариант">

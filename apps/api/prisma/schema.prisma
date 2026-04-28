@@ -64,6 +64,8 @@ model AdventQuestion {
   optionsJson String?
   /// Для TEXT: JSON string[] допустимых ответов (сравнение trim + lower)
   textAnswersJson String?
+  /// Любой ответ засчитывается (SINGLE/MULTI/TEXT)
+  acceptAnyAnswer Boolean @default(false)
   /// Иллюстрация к вопросу (путь от uploads), необязательно
   imageFilename String?
 
