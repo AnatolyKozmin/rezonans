@@ -61,7 +61,9 @@ function AdventMediaSlide({ m }: { m: AdventMediaPublic }) {
   );
 }
 
-/** Несколько плашек/фото/видео — листаются кнопками, точками и свайпом. */
+/** Несколько плашек/фото/видео — листаются кнопками, точками и свайпом.
+ * Все слайды лежат в одной высотной «рамке» — при переключении страница не дёргается.
+ */
 function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; dayKey: number }) {
   const sorted = useMemo(() => sortAdventMedia(media), [media]);
   const [idx, setIdx] = useState(0);
@@ -74,6 +76,15 @@ function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; da
   useEffect(() => {
     setIdx((i) => Math.min(i, Math.max(0, sorted.length - 1)));
   }, [sorted.length]);
+
+  // Прокэшировать картинки соседних слайдов, чтобы меньше мигала подложка при листании
+  useEffect(() => {
+    sorted.forEach((item) => {
+      if (item.kind === "VIDEO") return;
+      const im = new Image();
+      im.src = item.url;
+    });
+  }, [sorted]);
 
   if (sorted.length === 0) return null;
   if (sorted.length === 1) {
@@ -89,18 +100,18 @@ function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; da
   };
 
   const onTouchStart = (e: TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
+    touchStartX.current = e.touches[0]?.clientX ?? null;
   };
 
   const onTouchEnd = (e: TouchEvent) => {
     if (touchStartX.current === null) return;
-    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dx = (e.changedTouches[0]?.clientX ?? touchStartX.current) - touchStartX.current;
     touchStartX.current = null;
     if (dx > 56) go(-1);
     else if (dx < -56) go(1);
   };
 
-  const m = sorted[idx];
+  const cap = sorted[idx]?.caption?.trim();
 
   return (
     <div
@@ -110,8 +121,26 @@ function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; da
       aria-label={`Материалы дня, слайд ${idx + 1} из ${sorted.length}`}
     >
       <div className="advent-media-carousel__viewport" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <div key={m.id} className="advent-media-carousel__slide">
-          <AdventMediaSlide m={m} />
+        <div className="advent-media-carousel__aspect" aria-live="polite">
+          {sorted.map((item, i) => (
+            <div
+              key={item.id}
+              className={`advent-media-carousel__pane ${i === idx ? "is-active" : ""}`}
+              aria-hidden={i !== idx}
+            >
+              {item.kind === "VIDEO" ? (
+                <video
+                  className="advent-media-carousel__media"
+                  controls
+                  playsInline
+                  src={item.url}
+                  preload="metadata"
+                />
+              ) : (
+                <img className="advent-media-carousel__media" src={item.url} alt="" decoding="async" loading="eager" />
+              )}
+            </div>
+          ))}
         </div>
         <button
           type="button"
@@ -132,6 +161,9 @@ function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; da
           <span aria-hidden>›</span>
         </button>
       </div>
+      {cap ? (
+        <p className="advent-media-carousel__caption-under">{cap}</p>
+      ) : null}
       <div className="advent-media-carousel__dots" role="tablist" aria-label="Выбор слайда">
         {sorted.map((item, i) => (
           <button
