@@ -582,8 +582,8 @@ cron.schedule("* * * * *", async () => {
   }
 });
 
-// ─── Напоминание неактивным пользователям Mini App (раз в 12 часов) ─────────
-cron.schedule("0 9,21 * * *", async () => {
+// ─── Неактивные в Mini App: напоминания в 15:00 и 21:00 (локальное время контейнера) ─────────
+cron.schedule("0 15,21 * * *", async () => {
   try {
     const h: Record<string, string> = {};
     if (botConfig.internalKey) h["x-internal-key"] = botConfig.internalKey;
