@@ -545,15 +545,20 @@ bot.command("remind", async (ctx) => {
   await ctx.reply("Напоминания снова включены.");
 });
 
+// ─── Напоминание «пройди текущий день»: каждые 2 ч (:00, по TZ контейнера — TZ в compose) ────
+// Важно: API отдаёт список только если прошло ≥ ADVENT_REMINDER_HOURS с последней активности/просмотра.
 cron.schedule("0 */2 * * *", async () => {
   try {
     const batch = await api.reminderBatch();
+    const n = batch.telegramIds?.length ?? 0;
+    if (n === 0) return;
     for (const tid of batch.telegramIds) {
       await bot.telegram.sendMessage(
         tid,
         `Напоминание: не забудьте открыть день ${batch.day} в адвент-календаре 🎄`
       );
     }
+    console.log(`Advent reminder: sent to ${n} user(s), day=${batch.day}`);
   } catch (e) {
     console.error("reminder cron", e);
   }
@@ -565,7 +570,11 @@ cron.schedule("* * * * *", async () => {
     const h: Record<string, string> = {};
     if (botConfig.internalKey) h["x-internal-key"] = botConfig.internalKey;
     const r = await fetch(`${botConfig.apiBase}/api/internal/pending-broadcast`, { headers: h });
-    if (!r.ok) return;
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      console.error(`broadcast poll HTTP ${r.status}`, t.slice(0, 200));
+      return;
+    }
     const data = await r.json() as { broadcast: { message: string } | null; telegramIds: string[] };
     if (!data.broadcast) return;
 
@@ -588,7 +597,11 @@ cron.schedule("0 15,21 * * *", async () => {
     const h: Record<string, string> = {};
     if (botConfig.internalKey) h["x-internal-key"] = botConfig.internalKey;
     const r = await fetch(`${botConfig.apiBase}/api/internal/inactive-mini-users`, { headers: h });
-    if (!r.ok) return;
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      console.error(`inactive-mini-users HTTP ${r.status}`, t.slice(0, 200));
+      return;
+    }
     const data = await r.json() as { telegramIds: string[] };
     for (const tid of data.telegramIds) {
       try {

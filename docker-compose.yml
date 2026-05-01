@@ -75,6 +75,7 @@ services:
       API_BASE_URL: http://api:4000
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:8080}
+      TZ: ${TZ:-Europe/Moscow}
 
 networks:
   default: {}
