@@ -545,9 +545,9 @@ bot.command("remind", async (ctx) => {
   await ctx.reply("Напоминания снова включены.");
 });
 
-// ─── Напоминание «пройди текущий день»: каждые 2 ч (:00, по TZ контейнера — TZ в compose) ────
-// Важно: API отдаёт список только если прошло ≥ ADVENT_REMINDER_HOURS с последней активности/просмотра.
-cron.schedule("0 */2 * * *", async () => {
+// ─── Напоминание «пройди текущий день»: 15:00 и 21:00 по Москве ─────────────
+// API отдаёт список только если прошло ≥ ADVENT_REMINDER_HOURS с последней активности/просмотра.
+cron.schedule("0 15,21 * * *", async () => {
   try {
     const batch = await api.reminderBatch();
     const n = batch.telegramIds?.length ?? 0;
@@ -562,7 +562,7 @@ cron.schedule("0 */2 * * *", async () => {
   } catch (e) {
     console.error("reminder cron", e);
   }
-});
+}, { timezone: "Europe/Moscow" });
 
 // ─── Рассылки: бот каждую минуту проверяет очередь ─────────────────────────
 cron.schedule("* * * * *", async () => {

@@ -3252,7 +3252,7 @@ a.mini-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.2rem;
   border-radius: 14px;
   border: 1px solid var(--mini-border);
@@ -3345,10 +3345,6 @@ a.mini-btn {
   line-height: 1.3;
   color: var(--mini-text);
   word-break: break-word;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
 }
 
 .mini-day-card__quiz-badge {
