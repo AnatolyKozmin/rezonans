@@ -2324,7 +2324,7 @@ a:hover {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 0.5rem;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
 }
 
 .mini-loading {

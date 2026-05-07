@@ -64,7 +64,7 @@ services:
       - bot
     build:
       context: .
-      dockerfile: docker/bot/Dockerfile
+      dockerfile: docker/bot-py/Dockerfile
     restart: unless-stopped
     depends_on:
       api:
@@ -74,8 +74,9 @@ services:
       TELEGRAM_MINIAPP_TME: ${TELEGRAM_MINIAPP_TME:-}
       API_BASE_URL: http://api:4000
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-dev-admin-key}
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:8080}
-      TZ: ${TZ:-Europe/Moscow}
+      TZ: Europe/Moscow
 
 networks:
   default: {}
