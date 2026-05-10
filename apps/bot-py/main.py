@@ -575,7 +575,7 @@ async def job_advent_reminder():
         try:
             await bot.send_message(
                 tid,
-                f"Напоминание: не забудь открыть день {day} в адвент-календаре 💪",
+                f"Напоминание: не забудь открыть день {day} в адвент-календаре.",
             )
         except Exception:
             pass
@@ -615,12 +615,12 @@ async def job_inactive_reminder():
         try:
             await bot.send_message(
                 tid,
-                "👋 Привет! Ты давно не заходил в адвент-календарь.\n\n"
-                "Открывай новые дни — тебя ждут задания и материалы 💪",
+                "Привет! Ты давно не заходил в адвент-календарь.\n\n"
+                "Открывай новые дни — тебя ждут задания и материалы.",
                 reply_markup=InlineKeyboardMarkup(
                     inline_keyboard=[[
                         InlineKeyboardButton(
-                            text="📱 Открыть Мини-апп",
+                            text="Открыть Мини-апп",
                             web_app=WebAppInfo(url=WEB_URL),
                         )
                     ]]
