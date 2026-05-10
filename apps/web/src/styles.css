@@ -712,15 +712,17 @@ a:hover {
   touch-action: pan-y pinch-zoom;
 }
 
-/* Фиксированная «рамка» под все слайды — высота страницы не прыгает */
+/* Высота фрейма задаётся динамически из натурального соотношения активного слайда
+   (см. AdventMediaCarousel). 4/3 здесь — fallback на первый кадр, до onLoad. */
 .advent-media-carousel__aspect {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: min(70vh, 560px);
+  aspect-ratio: 4 / 3;
+  max-height: min(80vh, 720px);
   margin: 0;
   border-radius: var(--radius-md);
   background: rgba(0, 0, 0, 0.2);
+  transition: aspect-ratio 0.25s ease;
 }
 
 .advent-media-carousel__pane {
@@ -742,7 +744,8 @@ a:hover {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  /* contain страхует от обрезки, если ratio для слайда ещё не успел замериться (fallback 4:3) */
+  object-fit: contain;
   background: rgba(37, 39, 54, 0.45);
   vertical-align: middle;
 }

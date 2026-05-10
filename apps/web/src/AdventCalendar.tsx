@@ -62,11 +62,12 @@ function AdventMediaSlide({ m }: { m: AdventMediaPublic }) {
 }
 
 /** Несколько плашек/фото/видео — листаются кнопками, точками и свайпом.
- * Все слайды лежат в одной высотной «рамке» — при переключении страница не дёргается.
+ * Высота фрейма берётся из натурального соотношения активного слайда (не сжимаем и не обрезаем).
  */
 function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; dayKey: number }) {
   const sorted = useMemo(() => sortAdventMedia(media), [media]);
   const [idx, setIdx] = useState(0);
+  const [ratios, setRatios] = useState<Record<string, number>>({});
   const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
@@ -77,14 +78,26 @@ function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; da
     setIdx((i) => Math.min(i, Math.max(0, sorted.length - 1)));
   }, [sorted.length]);
 
-  // Прокэшировать картинки соседних слайдов, чтобы меньше мигала подложка при листании
+  // Прокэш + ранний замер пропорций изображений (чтобы фрейм сразу принял правильную высоту)
   useEffect(() => {
     sorted.forEach((item) => {
       if (item.kind === "VIDEO") return;
       const im = new Image();
+      im.onload = () => {
+        if (im.naturalWidth && im.naturalHeight) {
+          setRatios((prev) =>
+            prev[item.id] ? prev : { ...prev, [item.id]: im.naturalWidth / im.naturalHeight },
+          );
+        }
+      };
       im.src = item.url;
     });
   }, [sorted]);
+
+  const recordRatio = (id: string, w: number, h: number) => {
+    if (!w || !h) return;
+    setRatios((prev) => (prev[id] ? prev : { ...prev, [id]: w / h }));
+  };
 
   if (sorted.length === 0) return null;
   if (sorted.length === 1) {
@@ -112,6 +125,12 @@ function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; da
   };
 
   const cap = sorted[idx]?.caption?.trim();
+  const activeRatio = sorted[idx] ? ratios[sorted[idx].id] : undefined;
+  // Ограничиваем разумно: не уже 3:4 (вертикальный портрет) и не шире 21:9 (панорама)
+  const clampedRatio = activeRatio
+    ? Math.max(0.6, Math.min(2.4, activeRatio))
+    : undefined;
+  const aspectStyle = clampedRatio ? { aspectRatio: String(clampedRatio) } : undefined;
 
   return (
     <div
@@ -121,7 +140,7 @@ function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; da
       aria-label={`Материалы дня, слайд ${idx + 1} из ${sorted.length}`}
     >
       <div className="advent-media-carousel__viewport" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <div className="advent-media-carousel__aspect" aria-live="polite">
+        <div className="advent-media-carousel__aspect" style={aspectStyle} aria-live="polite">
           {sorted.map((item, i) => (
             <div
               key={item.id}
@@ -135,9 +154,23 @@ function AdventMediaCarousel({ media, dayKey }: { media: AdventMediaPublic[]; da
                   playsInline
                   src={item.url}
                   preload="metadata"
+                  onLoadedMetadata={(e) => {
+                    const v = e.currentTarget;
+                    recordRatio(item.id, v.videoWidth, v.videoHeight);
+                  }}
                 />
               ) : (
-                <img className="advent-media-carousel__media" src={item.url} alt="" decoding="async" loading="eager" />
+                <img
+                  className="advent-media-carousel__media"
+                  src={item.url}
+                  alt=""
+                  decoding="async"
+                  loading="eager"
+                  onLoad={(e) => {
+                    const im = e.currentTarget;
+                    recordRatio(item.id, im.naturalWidth, im.naturalHeight);
+                  }}
+                />
               )}
             </div>
           ))}
