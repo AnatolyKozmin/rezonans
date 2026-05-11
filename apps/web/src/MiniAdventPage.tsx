@@ -525,10 +525,9 @@ export function MiniAdventPage() {
         >
           ‹
         </button>
-        <div className="mini-quiz-header__info">
-          <span className="mini-quiz-header__day">День {day}</span>
-          <span className="mini-quiz-header__step">{step + 1} / {total}</span>
-        </div>
+        <span className="mini-quiz-header__day">День {day}</span>
+        <div className="mini-quiz-header__spacer" />
+        <span className="mini-quiz-header__step">{step + 1} / {total}</span>
       </header>
 
       <div className="mini-progress-bar" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
@@ -552,7 +551,7 @@ export function MiniAdventPage() {
               {q.options.map((o, i) => (
                 <label key={i} className={`mini-option ${singleSel === i ? "mini-option--selected" : ""}`}>
                   <input type="radio" name="single" checked={singleSel === i} onChange={() => setSingleSel(i)} />
-                  <span className="mini-option__mark" aria-hidden />
+                  <span className="mini-option__mark" aria-hidden>{String.fromCharCode(65 + i)}</span>
                   <span className="mini-option__text">{o.text || `Вариант ${i + 1}`}</span>
                 </label>
               ))}
@@ -578,7 +577,7 @@ export function MiniAdventPage() {
                         });
                       }}
                     />
-                    <span className="mini-option__mark" aria-hidden />
+                    <span className="mini-option__mark mini-option__mark--check" aria-hidden>{String.fromCharCode(65 + i)}</span>
                     <span className="mini-option__text">{o.text || `Вариант ${i + 1}`}</span>
                   </label>
                 );
