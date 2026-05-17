@@ -245,13 +245,6 @@ async def fsm_workplace(msg: Message, state: FSMContext):
     await _finish_onboard(msg, state)
 
 
-# ── /remind ───────────────────────────────────────────────────────────────────
-@dp.message(Command("remind"))
-async def on_remind(msg: Message):
-    await api_patch(f"/api/users/{msg.from_user.id}/mute", {"muted": False})
-    await msg.answer("Напоминания снова включены.")
-
-
 # ── /broadcast ────────────────────────────────────────────────────────────────
 @dp.message(Command("broadcast"))
 async def on_broadcast(msg: Message):
@@ -549,37 +542,9 @@ async def on_giveaway_enter(cb: CallbackQuery):
         await cb.message.answer(f"Не получилось: {e}")
 
 
-@dp.message(F.text == "🔕 Без напоминаний")
-async def on_mute(msg: Message):
-    await api_patch(f"/api/users/{msg.from_user.id}/mute", {"muted": True})
-    await msg.answer("Напоминания отключены. Команда /remind включит снова.")
-
-
 # ── Cron jobs ─────────────────────────────────────────────────────────────────
 def _internal_headers() -> dict:
     return {"x-internal-key": INTERNAL_KEY} if INTERNAL_KEY else {}
-
-
-async def job_advent_reminder():
-    """Напоминание о текущем дне адвента — 15:00 и 21:00 МСК."""
-    try:
-        data = await api_get("/api/internal/reminder-batch", _internal_headers())
-    except Exception as e:
-        log.error("reminder-batch: %s", e)
-        return
-    tids = data.get("telegramIds", [])
-    day = data.get("day")
-    if not tids:
-        return
-    for tid in tids:
-        try:
-            await bot.send_message(
-                tid,
-                f"Напоминание: не забудь открыть день {day} в адвент-календаре.",
-            )
-        except Exception:
-            pass
-    log.info("Advent reminder: %d users, day=%s", len(tids), day)
 
 
 async def job_broadcast():
@@ -603,44 +568,11 @@ async def job_broadcast():
     log.info("Broadcast: %d/%d sent", sent, len(tids))
 
 
-async def job_inactive_reminder():
-    """Напоминание пользователям, давно не открывавшим мини-апп — 15:00 и 21:00 МСК."""
-    try:
-        data = await api_get("/api/internal/inactive-mini-users", _internal_headers())
-    except Exception as e:
-        log.error("inactive-mini-users: %s", e)
-        return
-    tids = data.get("telegramIds", [])
-    for tid in tids:
-        try:
-            await bot.send_message(
-                tid,
-                "Привет! Ты давно не заходил в адвент-календарь.\n\n"
-                "Открывай новые дни — тебя ждут задания и материалы.",
-                reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[[
-                        InlineKeyboardButton(
-                            text="Открыть Мини-апп",
-                            web_app=WebAppInfo(url=WEB_URL),
-                        )
-                    ]]
-                ),
-            )
-        except Exception:
-            pass
-    if tids:
-        log.info("Inactivity reminders: %d users", len(tids))
-
-
 # ── Entry point ───────────────────────────────────────────────────────────────
 async def main():
     scheduler = AsyncIOScheduler(timezone=MSK)
-    # Напоминания адвента — строго в 15:00 и 21:00 по Москве
-    scheduler.add_job(job_advent_reminder, CronTrigger(hour="15,21", minute=0, timezone=MSK))
     # Рассылки — каждую минуту
     scheduler.add_job(job_broadcast, CronTrigger(minute="*"))
-    # Неактивные в мини-апп — 15:00 и 21:00 по Москве
-    scheduler.add_job(job_inactive_reminder, CronTrigger(hour="15,21", minute=0, timezone=MSK))
     scheduler.start()
     log.info("Bot started")
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
